@@ -3,12 +3,12 @@
 import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 export function Card({ children, className = "", variant = "default" }: { children: ReactNode; className?: string; variant?: "default" | "alert" | "spotlight" | "table" }) {
-  const base = "p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_#E8E2D6] border-4 border-bg-panel-dark";
+  const base = "p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--border-strong)] border-4 border-border-strong";
   const variants = {
-    default: "bg-bg-base-dark",
-    alert: "bg-coral-red border-bg-panel-dark",
-    spotlight: "bg-bg-panel-dark border-bg-panel-dark shadow-[8px_8px_0px_0px_#ED4A3F]",
-    table: "bg-bg-panel-alt-dark mt-8 shadow-[8px_8px_0px_0px_#E8E2D6] p-0"
+    default: "bg-bg-base",
+    alert: "bg-coral-red border-border-strong",
+    spotlight: "bg-bg-panel border-border-strong shadow-[8px_8px_0px_0px_#ED4A3F]",
+    table: "bg-bg-panel-alt mt-8 shadow-[8px_8px_0px_0px_var(--border-strong)] p-0"
   };
 
   return (
@@ -20,8 +20,8 @@ export function Card({ children, className = "", variant = "default" }: { childr
 
 export function CardHeader({ children, className = "" }: { children: ReactNode, className?: string }) {
   return (
-    <div className={`bg-bg-panel-dark border-b-4 border-bg-panel-dark p-4 flex justify-between items-center ${className}`}>
-      <h3 className="font-label-caps text-label-caps tracking-[0.1em] uppercase font-bold text-bg-base-dark">{children}</h3>
+    <div className={`bg-bg-panel border-b-4 border-border-strong p-4 flex justify-between items-center ${className}`}>
+      <h3 className="font-label-caps text-label-caps tracking-[0.1em] uppercase font-bold text-text-inverse">{children}</h3>
     </div>
   );
 }
@@ -38,13 +38,13 @@ export function Button({
   children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
-  const base = "font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-y-1 active:translate-x-1 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
-  
+  const base = "font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 transition-all shadow-[4px_4px_0px_0px_var(--border-strong)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-y-1 active:translate-x-1 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
+
   const variants: Record<ButtonVariant, string> = {
-    primary: "bg-black text-coral-red border-black active:bg-white active:text-black",
-    secondary: "bg-bg-panel-dark text-bg-base-dark border-bg-panel-dark shadow-[4px_4px_0px_0px_#ED4A3F] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#ED4A3F]",
-    danger: "bg-coral-red text-white border-bg-panel-dark shadow-[4px_4px_0px_0px_#E8E2D6]",
-    ghost: "border-transparent bg-transparent text-secondary-fixed-dim shadow-none hover:text-white hover:bg-white/5 active:translate-y-0 active:translate-x-0 hover:translate-y-0 hover:translate-x-0 font-data-mono normal-case tracking-widest",
+    primary: "bg-coral-red text-white border-border-strong",
+    secondary: "bg-bg-panel text-text-inverse border-border-strong shadow-[4px_4px_0px_0px_#ED4A3F] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#ED4A3F]",
+    danger: "bg-bg-base text-coral-red border-coral-red",
+    ghost: "border-transparent bg-transparent text-text-muted shadow-none hover:text-text-main hover:bg-border-subtle active:translate-y-0 active:translate-x-0 hover:translate-y-0 hover:translate-x-0 font-data-mono normal-case tracking-widest",
   };
 
   return (
@@ -58,7 +58,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full border-2 border-bg-panel-dark bg-bg-panel-alt-dark px-4 py-3 font-data-mono text-data-mono text-white placeholder:text-secondary-fixed-dim transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
     />
   );
 }
@@ -67,7 +67,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`w-full border-2 border-bg-panel-dark bg-bg-panel-alt-dark px-4 py-3 font-data-mono text-data-mono text-white placeholder:text-secondary-fixed-dim transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
     />
   );
 }
@@ -76,13 +76,13 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full border-2 border-bg-panel-dark bg-bg-panel-alt-dark px-4 py-3 font-data-mono text-data-mono text-white transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
     />
   );
 }
 
 export function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <label className={`mb-2 block font-label-caps text-label-caps tracking-[0.1em] uppercase text-secondary-fixed-dim ${className}`}>{children}</label>;
+  return <label className={`mb-2 block font-label-caps text-label-caps tracking-[0.1em] uppercase text-text-muted ${className}`}>{children}</label>;
 }
 
 export function Field({ children }: { children: ReactNode }) {
@@ -92,7 +92,7 @@ export function Field({ children }: { children: ReactNode }) {
 const badgeColors: Record<string, string> = {
   positive: "border-[#00FF00] text-[#00FF00] hover:bg-[#00FF00] hover:text-black",
   warning: "border-[#ffc107] text-[#ffc107] hover:bg-[#ffc107] hover:text-black",
-  neutral: "border-secondary-fixed-dim text-secondary-fixed-dim hover:bg-secondary-fixed-dim hover:text-black",
+  neutral: "border-text-muted text-text-muted hover:bg-text-muted hover:text-black",
   danger: "border-coral-red text-coral-red hover:bg-coral-red hover:text-white",
 };
 
@@ -132,11 +132,11 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function Alert({ kind = "error", children }: { kind?: "error" | "warning"; children: ReactNode }) {
   const isWarning = kind === "warning";
-  const bg = isWarning ? "bg-black" : "bg-bg-panel-alt-dark";
-  const text = isWarning ? "text-white" : "text-white";
-  
+  const bg = isWarning ? "bg-bg-panel" : "bg-bg-panel-alt";
+  const text = isWarning ? "text-text-inverse" : "text-text-main";
+
   return (
-    <div className={`mb-8 border-l-4 border-black p-4 font-data-mono text-data-mono ${bg} ${text}`}>
+    <div className={`mb-8 border-l-4 border-coral-red p-4 font-data-mono text-data-mono ${bg} ${text}`}>
       <div className="leading-relaxed">{children}</div>
     </div>
   );
@@ -144,9 +144,9 @@ export function Alert({ kind = "error", children }: { kind?: "error" | "warning"
 
 export function PageHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
-    <div className="mb-12 border-b-4 border-bg-panel-dark pb-8 flex flex-col md:flex-row md:items-end justify-between">
+    <div className="mb-12 border-b-4 border-border-strong pb-8 flex flex-col md:flex-row md:items-end justify-between">
       <div>
-        <h2 className="font-display-2xl text-display-2xl font-black uppercase text-bg-panel-dark mb-4 leading-none">
+        <h2 className="font-display-2xl text-display-2xl font-black uppercase text-text-main mb-4 leading-none">
           {title.split(' ').map((word, i) => <span key={i}>{word}<br/></span>)}
         </h2>
       </div>
@@ -157,11 +157,11 @@ export function PageHeader({ title, action }: { title: string; action?: ReactNod
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center bg-bg-panel-alt-dark border-4 border-dashed border-bg-panel-dark">
+    <div className="flex flex-col items-center justify-center py-20 text-center bg-bg-panel-alt border-4 border-dashed border-border-strong">
       <div className="mb-6">
-        <span className="material-symbols-outlined text-4xl text-secondary-fixed-dim" data-icon="warning">warning</span>
+        <span className="material-symbols-outlined text-4xl text-text-muted" data-icon="warning">warning</span>
       </div>
-      <p className="font-data-mono text-data-mono text-secondary-fixed-dim uppercase tracking-widest">{children}</p>
+      <p className="font-data-mono text-data-mono text-text-muted uppercase tracking-widest">{children}</p>
     </div>
   );
 }
@@ -176,27 +176,27 @@ export function Table({ children }: { children: ReactNode }) {
 
 export function Th({ children }: { children?: ReactNode }) {
   return (
-    <th className="pb-2 font-normal tracking-widest text-xs font-data-mono text-data-mono text-secondary-fixed-dim uppercase border-b-2 border-bg-panel-dark">
+    <th className="pb-2 font-normal tracking-widest text-xs font-data-mono text-data-mono text-text-muted uppercase border-b-2 border-border-strong">
       {children}
     </th>
   );
 }
 
 export function Td({ children, className = "" }: { children?: ReactNode; className?: string }) {
-  return <td className={`py-2 text-white border-b border-bg-panel-dark/30 font-data-mono text-data-mono ${className}`}>{children}</td>;
+  return <td className={`py-2 text-text-main border-b border-border-subtle font-data-mono text-data-mono ${className}`}>{children}</td>;
 }
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg-base-dark/90 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
       <div
-        className="w-full max-w-2xl border-4 border-bg-panel-dark bg-bg-panel-alt-dark shadow-[16px_16px_0px_0px_#E8E2D6]"
+        className="w-full max-w-2xl border-4 border-border-strong bg-bg-panel-alt shadow-[16px_16px_0px_0px_var(--border-strong)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-bg-panel-dark border-b-4 border-bg-panel-dark p-4 flex justify-between items-center">
-          <h3 className="font-label-caps text-label-caps tracking-[0.1em] uppercase font-bold text-bg-base-dark">{title}</h3>
-          <button onClick={onClose} className="text-bg-base-dark hover:text-coral-red transition-colors">
+        <div className="bg-bg-panel border-b-4 border-border-strong p-4 flex justify-between items-center">
+          <h3 className="font-label-caps text-label-caps tracking-[0.1em] uppercase font-bold text-text-inverse">{title}</h3>
+          <button onClick={onClose} className="text-text-inverse hover:text-coral-red transition-colors">
             <span className="material-symbols-outlined text-2xl">close</span>
           </button>
         </div>

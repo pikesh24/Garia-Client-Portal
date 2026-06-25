@@ -179,19 +179,19 @@ html.dark {
     -webkit-font-smoothing: antialiased;
   }
   
-  /* Custom scrollbar for dark theme */
+  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   ::-webkit-scrollbar-track {
-    background: #151A21; 
-    border-left: 2px solid #E8E2D6;
+    background: var(--bg-base);
+    border-left: 2px solid var(--border-strong);
   }
   ::-webkit-scrollbar-thumb {
-    background: #E8E2D6; 
+    background: var(--border-strong);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #ED4A3F; 
+    background: var(--accent);
   }
 }
