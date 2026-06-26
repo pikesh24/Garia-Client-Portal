@@ -1,177 +1,239 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest, ApiError } from "@/lib/api";
-import { Meeting } from "@/lib/types";
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  EmptyState,
-  Field,
-  Input,
-  Label,
-  Modal,
-  PageHeader,
-  StatusBadge,
-  Table,
-  Td,
-  Textarea,
-  Th,
-} from "@/components/ui";
+import { apiRequest } from "@/lib/api";
+import { BusyRange, Meeting, MeetingAvailability, MeetingBlock } from "@/lib/types";
+import { Button, Card, CardBody, CardHeader, PageHeader, StatusBadge, Toggle } from "@/components/ui";
+import { BlockTimeModal, MeetingActions, MeetingDetailsModal, TimeRange, meetingDisplayRange, formatTimeFn } from "@/components/MeetingCalendar";
+
+const AVAILABILITY_POLL_MS = 15000;
+
+function toLocalDateParam(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 export default function AdminMeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [active, setActive] = useState<Meeting | null>(null);
-  const [meetingLink, setMeetingLink] = useState("");
-  const [newDatetime, setNewDatetime] = useState("");
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [availability, setAvailability] = useState<MeetingAvailability>({ accepts_online: true, accepts_offline: true });
+  const [savingAvailability, setSavingAvailability] = useState(false);
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   async function load() {
     const data = await apiRequest<Meeting[]>("/api/admin/meetings");
     setMeetings(data);
+    setLoading(false);
+  }
+
+  async function loadAvailability() {
+    const data = await apiRequest<MeetingAvailability>("/api/admin/meetings/availability");
+    setAvailability(data);
+  }
+
+  async function loadBlocks() {
+    const data = await apiRequest<MeetingBlock[]>("/api/admin/meetings/blocks");
+    setBlocks(data);
   }
 
   useEffect(() => {
     load();
+    loadBlocks();
+    loadAvailability();
+    const interval = setInterval(loadAvailability, AVAILABILITY_POLL_MS);
+    return () => clearInterval(interval);
   }, []);
 
-  function openDrawer(m: Meeting) {
-    setActive(m);
-    setMeetingLink(m.meeting_link ?? "");
-    setNewDatetime("");
-    setReason("");
-    setError(null);
-  }
-
-  async function confirmSlot() {
-    if (!active) return;
+  async function updateAvailability(patch: Partial<MeetingAvailability>) {
+    setSavingAvailability(true);
     try {
-      await apiRequest(`/api/admin/meetings/${active.id}/confirm`, {
+      const data = await apiRequest<MeetingAvailability>("/api/admin/meetings/availability", {
         method: "PATCH",
-        body: { meeting_link: meetingLink },
+        body: patch,
       });
-      setActive(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not confirm slot");
+      setAvailability(data);
+    } finally {
+      setSavingAvailability(false);
     }
   }
 
-  async function rescheduleSlot() {
-    if (!active) return;
-    try {
-      await apiRequest(`/api/admin/meetings/${active.id}/reschedule`, {
-        method: "PATCH",
-        body: { new_proposed_datetime: new Date(newDatetime).toISOString(), reason },
-      });
-      setActive(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not reschedule");
-    }
+  async function deleteBlock(id: number) {
+    await apiRequest(`/api/admin/meetings/blocks/${id}`, { method: "DELETE" });
+    await loadBlocks();
   }
 
-  async function overwriteMeeting() {
-    if (!active) return;
-    try {
-      await apiRequest(`/api/admin/meetings/${active.id}`, {
-        method: "PUT",
-        body: {
-          meeting_link: meetingLink,
-          new_proposed_datetime: newDatetime ? new Date(newDatetime).toISOString() : null,
-          reason,
-        },
-      });
-      setActive(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not overwrite meeting");
-    }
-  }
+  const fetchBusyRanges = async (date: Date, excludeMeetingId?: number): Promise<TimeRange[]> => {
+    const params = new URLSearchParams({ date: toLocalDateParam(date) });
+    if (excludeMeetingId) params.set("exclude_meeting_id", String(excludeMeetingId));
+    const data = await apiRequest<BusyRange[]>(`/api/admin/meetings/busy?${params.toString()}`);
+    return data.map((r) => ({ start: new Date(r.start_datetime), end: new Date(r.end_datetime) }));
+  };
 
-  async function deleteMeeting() {
-    if (!active) return;
-    if (!confirm("Delete this meeting entirely?")) return;
-    await apiRequest(`/api/admin/meetings/${active.id}`, { method: "DELETE" });
-    setActive(null);
-    await load();
-  }
+  const actions: MeetingActions = {
+    onConfirm: async (m, meetingLink) => {
+      await apiRequest(`/api/admin/meetings/${m.id}/confirm`, { method: "PATCH", body: { meeting_link: meetingLink } });
+      await load();
+    },
+    onDeny: async (m, reason) => {
+      await apiRequest(`/api/admin/meetings/${m.id}/deny`, { method: "PATCH", body: { reason } });
+      await load();
+    },
+    onProposeReschedule: async (m, start, end) => {
+      await apiRequest(`/api/admin/meetings/${m.id}/propose-reschedule`, {
+        method: "POST",
+        body: { pending_start_datetime: start.toISOString(), pending_end_datetime: end.toISOString() },
+      });
+      await load();
+    },
+  };
+
+  // Sort meetings by date
+  const sortedMeetings = [...meetings].sort((a, b) => {
+    const aDate = meetingDisplayRange(a).start;
+    const bDate = meetingDisplayRange(b).start;
+    return aDate.getTime() - bDate.getTime();
+  });
 
   return (
     <div className="space-y-6">
       <PageHeader title="Unified Meetings Calendar" />
-      <Card>
-        <CardBody>
-          {meetings.length === 0 ? (
-            <EmptyState>No meetings yet.</EmptyState>
-          ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Client</Th>
-                  <Th>Type</Th>
-                  <Th>Proposed</Th>
-                  <Th>Status</Th>
-                  <Th></Th>
-                </tr>
-              </thead>
-              <tbody>
-                {meetings.map((m) => (
-                  <tr key={m.id}>
-                    <Td className="font-mono">#{m.client_id}</Td>
-                    <Td>{m.meeting_type}</Td>
-                    <Td className="font-mono">{new Date(m.proposed_datetime).toLocaleString()}</Td>
-                    <Td>
-                      <StatusBadge status={m.status} />
-                    </Td>
-                    <Td>
-                      <button className="text-amber underline" onClick={() => openDrawer(m)}>
-                        Manage
-                      </button>
-                    </Td>
-                  </tr>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>Meeting Availability</CardHeader>
+          <CardBody>
+            <div className="flex flex-col gap-4">
+              <Toggle
+                checked={availability.accepts_online}
+                onChange={(v) => updateAvailability({ accepts_online: v })}
+                label="Accepting Online Meetings"
+                disabled={savingAvailability}
+              />
+              <Toggle
+                checked={availability.accepts_offline}
+                onChange={(v) => updateAvailability({ accepts_offline: v })}
+                label="Accepting Offline Meetings"
+                disabled={savingAvailability}
+              />
+            </div>
+            <p className="mt-4 text-[10px] uppercase font-bold tracking-widest text-text-muted">Clients see this in real time when booking a new appointment.</p>
+          </CardBody>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardHeader>Blocked Time Management</CardHeader>
+          <CardBody className="flex flex-col flex-1">
+            <div className="flex justify-between items-center mb-4">
+              <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">Prevent bookings on specific dates</p>
+              <Button onClick={() => setBlockModalOpen(true)} size="sm">
+                + Block Time Off
+              </Button>
+            </div>
+            
+            {blocks.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center border-4 border-dashed border-border-strong/30 bg-bg-panel-alt p-4">
+                <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">No blocked time ranges.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[120px] overflow-y-auto custom-scrollbar pr-2 flex-1">
+                {blocks.map((b) => (
+                  <div key={b.id} className="flex items-center justify-between border-2 border-border-strong bg-bg-panel-alt p-2">
+                    <div>
+                      <p className="font-data-mono text-xs font-bold text-text-main uppercase">
+                        {new Date(b.start_datetime).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        {", "}
+                        {new Date(b.start_datetime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} –{" "}
+                        {new Date(b.end_datetime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                      </p>
+                      {b.reason && <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{b.reason}</p>}
+                    </div>
+                    <button onClick={() => deleteBlock(b.id)} className="text-coral-red hover:underline font-data-mono text-[10px] uppercase font-black ml-2">
+                      REMOVE
+                    </button>
+                  </div>
                 ))}
-              </tbody>
-            </Table>
-          )}
-        </CardBody>
-      </Card>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </div>
 
-      <Modal open={!!active} onClose={() => setActive(null)} title={`Meeting #${active?.id ?? ""}`}>
-        {error && <Alert>{error}</Alert>}
-        <Field>
-          <Label>Meeting Link</Label>
-          <Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
-        </Field>
-        <Button onClick={confirmSlot} className="mb-4">
-          Confirm Meeting Slot Assignment
-        </Button>
-
-        <hr className="my-4 border-border-muted" />
-
-        <Field>
-          <Label>New Proposed Date/Time</Label>
-          <Input type="datetime-local" value={newDatetime} onChange={(e) => setNewDatetime(e.target.value)} />
-        </Field>
-        <Field>
-          <Label>Reason</Label>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} />
-        </Field>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={rescheduleSlot}>
-            Force Reschedule
-          </Button>
-          <Button variant="secondary" onClick={overwriteMeeting}>
-            Force Master Update Overwrite
-          </Button>
-          <Button variant="danger" onClick={deleteMeeting}>
-            Delete Appointment Entirely
-          </Button>
+      {/* Meeting list — screenshot 3 inspired */}
+      {loading ? (
+        <p className="text-text-muted">Loading...</p>
+      ) : sortedMeetings.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-bg-panel-alt border-4 border-dashed border-border-strong">
+          <span className="material-symbols-outlined text-4xl text-text-muted mb-4" data-icon="event_busy">event_busy</span>
+          <p className="font-data-mono text-data-mono text-text-muted uppercase tracking-widest">No meetings scheduled yet.</p>
         </div>
-      </Modal>
+      ) : (
+        <div className="space-y-3">
+          {sortedMeetings.map((m) => {
+            const range = meetingDisplayRange(m);
+            const monthStr = range.start.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+            const dayStr = String(range.start.getDate()).padStart(2, "0");
+
+            return (
+              <button
+                key={m.id}
+                onClick={() => { setActiveMeeting(m); setDetailError(null); }}
+                className="w-full text-left flex items-stretch border-4 border-border-strong bg-bg-panel-alt overflow-hidden shadow-[6px_6px_0px_0px_var(--border-strong)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_var(--border-strong)] transition-all group"
+              >
+                {/* Date badge */}
+                <div className="flex-shrink-0 w-20 bg-bg-panel border-r-4 border-border-strong flex flex-col items-center justify-center py-4">
+                  <span className="font-data-mono text-[10px] uppercase tracking-widest text-coral-red font-bold">{monthStr}</span>
+                  <span className="font-display-2xl text-4xl font-black text-white leading-none">{dayStr}</span>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 flex items-center justify-between px-5 py-4 min-w-0">
+                  <div className="min-w-0">
+                    <h3 className="font-headline-lg text-base font-black uppercase text-text-main truncate leading-tight">
+                      {m.agenda}
+                    </h3>
+                    <p className="font-data-mono text-xs text-text-muted tracking-[0.1em] mt-1">
+                      {formatTimeFn(range.start)}–{formatTimeFn(range.end)}{" "}
+                      <span className="opacity-60">· Client #{m.client_id} · {m.meeting_type}</span>
+                    </p>
+                  </div>
+                  <div className="flex-shrink-0 ml-4">
+                    <StatusBadge status={m.status} />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <MeetingDetailsModal
+        role="admin"
+        meeting={activeMeeting}
+        actions={actions}
+        error={detailError}
+        setError={setDetailError}
+        onClose={() => setActiveMeeting(null)}
+        fetchBusyRanges={fetchBusyRanges}
+      />
+
+      <BlockTimeModal
+        open={blockModalOpen}
+        onClose={() => setBlockModalOpen(false)}
+        minDate={new Date()}
+        fetchBusyRanges={fetchBusyRanges}
+        onCreate={async (start, end, reason) => {
+          await apiRequest("/api/admin/meetings/blocks", {
+            method: "POST",
+            body: { start_datetime: start.toISOString(), end_datetime: end.toISOString(), reason: reason || null },
+          });
+          await loadBlocks();
+        }}
+      />
     </div>
   );
 }

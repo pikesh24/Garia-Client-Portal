@@ -1,25 +1,76 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_type
+from datetime import datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_client
 from app.core.exceptions import BusinessRuleViolation, IrreversibleActionConflict
 from app.db.session import get_db
-from app.models.enums import MeetingStatus, MeetingType
+from app.models.enums import MeetingStatus, MeetingType, ProposedBy
 from app.models.meeting import Meeting
+from app.models.meeting_availability import MeetingAvailability
+from app.models.meeting_block import MeetingBlock
 from app.models.user import User
-from app.schemas.meeting import MeetingCounterProposeRequest, MeetingCreateRequest, MeetingOut
+from app.schemas.meeting import (
+    BusyRangeOut,
+    MeetingAvailabilityOut,
+    MeetingBlockOut,
+    MeetingCreateRequest,
+    MeetingDenyRequest,
+    MeetingOut,
+    MeetingReschedulePropose,
+)
 from app.services.email import notify_meeting_event
+from app.services.meeting_conflicts import find_conflict_reason, list_busy_ranges
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"], dependencies=[Depends(require_client)])
 
 
-def _ensure_future_window(proposed_datetime: datetime) -> None:
-    if proposed_datetime.tzinfo is None:
-        proposed_datetime = proposed_datetime.replace(tzinfo=timezone.utc)
-    if proposed_datetime < datetime.now(timezone.utc) + timedelta(hours=24):
-        raise BusinessRuleViolation("Meetings must be requested at least 24 hours in advance")
+def _as_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _ensure_future_window(start: datetime) -> None:
+    if _as_aware(start) < datetime.now(timezone.utc) + timedelta(hours=36):
+        raise BusinessRuleViolation("Meetings must be requested at least 36 hours in advance")
+
+
+def _ensure_after_confirmed(start: datetime, anchor: datetime) -> None:
+    if _as_aware(start) <= _as_aware(anchor):
+        raise BusinessRuleViolation("A reschedule must be proposed for a time after the currently confirmed appointment")
+
+
+def _get_availability(db: Session) -> MeetingAvailability:
+    availability = db.get(MeetingAvailability, 1)
+    if not availability:
+        availability = MeetingAvailability(id=1, accepts_online=True, accepts_offline=True)
+        db.add(availability)
+        db.commit()
+        db.refresh(availability)
+    return availability
+
+
+@router.get("/availability", response_model=MeetingAvailabilityOut)
+def get_availability(db: Session = Depends(get_db)):
+    return _get_availability(db)
+
+
+@router.get("/busy", response_model=list[BusyRangeOut])
+def get_busy_ranges(
+    date: date_type = Query(...), exclude_meeting_id: int | None = Query(default=None), db: Session = Depends(get_db)
+):
+    day_start = datetime.combine(date, time.min, tzinfo=timezone.utc)
+    day_end = datetime.combine(date, time.max, tzinfo=timezone.utc)
+    ranges = list_busy_ranges(db, day_start, day_end, exclude_meeting_id=exclude_meeting_id)
+    return [BusyRangeOut(start_datetime=s, end_datetime=e) for s, e in ranges]
+
+
+@router.get("/blocks", response_model=list[MeetingBlockOut])
+def list_blocks(db: Session = Depends(get_db)):
+    return db.query(MeetingBlock).order_by(MeetingBlock.start_datetime.asc()).all()
 
 
 @router.get("", response_model=list[MeetingOut])
@@ -27,7 +78,7 @@ def list_my_meetings(current_user: User = Depends(require_client), db: Session =
     return (
         db.query(Meeting)
         .filter(Meeting.client_id == current_user.id)
-        .order_by(Meeting.proposed_datetime.desc())
+        .order_by(Meeting.pending_start_datetime.desc())
         .all()
     )
 
@@ -38,17 +89,29 @@ def request_meeting(
     current_user: User = Depends(require_client),
     db: Session = Depends(get_db),
 ):
-    if payload.meeting_type == MeetingType.OFFLINE and not current_user.can_book_offline_meeting:
-        raise BusinessRuleViolation("This account is not authorized to book offline meetings")
+    availability = _get_availability(db)
+    if payload.meeting_type == MeetingType.ONLINE and not availability.accepts_online:
+        raise BusinessRuleViolation("Online meetings are not currently being accepted")
+    if payload.meeting_type == MeetingType.OFFLINE:
+        if not availability.accepts_offline:
+            raise BusinessRuleViolation("Offline meetings are not currently being accepted")
+        if not current_user.can_book_offline_meeting:
+            raise BusinessRuleViolation("This account is not authorized to book offline meetings")
 
-    _ensure_future_window(payload.proposed_datetime)
+    _ensure_future_window(payload.pending_start_datetime)
+
+    conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime)
+    if conflict:
+        raise BusinessRuleViolation(conflict)
 
     meeting = Meeting(
         client_id=current_user.id,
         meeting_type=payload.meeting_type,
-        proposed_datetime=payload.proposed_datetime,
+        pending_start_datetime=payload.pending_start_datetime,
+        pending_end_datetime=payload.pending_end_datetime,
         agenda=payload.agenda,
         status=MeetingStatus.REQUESTED,
+        pending_proposed_by=ProposedBy.CLIENT,
     )
     db.add(meeting)
     db.commit()
@@ -68,7 +131,7 @@ def cancel_meeting(
     meeting_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
 ):
     meeting = _get_own_meeting(meeting_id, current_user, db)
-    if meeting.status in (MeetingStatus.CANCELLED, MeetingStatus.COMPLETED):
+    if meeting.status in (MeetingStatus.CANCELLED, MeetingStatus.COMPLETED, MeetingStatus.DENIED):
         raise IrreversibleActionConflict("Meeting is already finalized and cannot be cancelled")
     meeting.status = MeetingStatus.CANCELLED
     meeting.cancelled_by_client = True
@@ -78,15 +141,43 @@ def cancel_meeting(
     return meeting
 
 
+@router.post("/{meeting_id}/propose-reschedule", response_model=MeetingOut)
+def propose_reschedule(
+    meeting_id: int,
+    payload: MeetingReschedulePropose,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    meeting = _get_own_meeting(meeting_id, current_user, db)
+    if meeting.status != MeetingStatus.CONFIRMED:
+        raise BusinessRuleViolation("Only a confirmed meeting can have a reschedule proposed")
+    _ensure_after_confirmed(payload.pending_start_datetime, meeting.confirmed_end_datetime)
+
+    conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime, exclude_meeting_id=meeting.id)
+    if conflict:
+        raise BusinessRuleViolation(conflict)
+
+    meeting.pending_start_datetime = payload.pending_start_datetime
+    meeting.pending_end_datetime = payload.pending_end_datetime
+    meeting.pending_proposed_by = ProposedBy.CLIENT
+    meeting.denial_reason = None
+    meeting.status = MeetingStatus.RESCHEDULE_PENDING
+    db.commit()
+    db.refresh(meeting)
+    return meeting
+
+
 @router.post("/{meeting_id}/accept-reschedule", response_model=MeetingOut)
 def accept_reschedule(
     meeting_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
 ):
     meeting = _get_own_meeting(meeting_id, current_user, db)
-    if meeting.status != MeetingStatus.RESCHEDULED:
-        raise BusinessRuleViolation("This meeting has no pending reschedule proposal")
-    meeting.proposed_datetime = meeting.rescheduled_datetime
-    meeting.rescheduled_datetime = None
+    if meeting.status != MeetingStatus.RESCHEDULE_PENDING or meeting.pending_proposed_by != ProposedBy.ADMIN:
+        raise BusinessRuleViolation("This meeting has no pending admin reschedule proposal")
+    meeting.confirmed_start_datetime = meeting.pending_start_datetime
+    meeting.confirmed_end_datetime = meeting.pending_end_datetime
+    meeting.pending_proposed_by = None
+    meeting.denial_reason = None
     meeting.status = MeetingStatus.CONFIRMED
     db.commit()
     db.refresh(meeting)
@@ -94,22 +185,21 @@ def accept_reschedule(
     return meeting
 
 
-@router.post("/{meeting_id}/counter-propose", response_model=MeetingOut)
-def counter_propose(
+@router.post("/{meeting_id}/deny-reschedule", response_model=MeetingOut)
+def deny_reschedule(
     meeting_id: int,
-    payload: MeetingCounterProposeRequest,
+    payload: MeetingDenyRequest,
     current_user: User = Depends(require_client),
     db: Session = Depends(get_db),
 ):
     meeting = _get_own_meeting(meeting_id, current_user, db)
-    if meeting.status != MeetingStatus.RESCHEDULED:
-        raise BusinessRuleViolation("This meeting has no pending reschedule proposal")
-    _ensure_future_window(payload.proposed_datetime)
-
-    meeting.proposed_datetime = payload.proposed_datetime
-    meeting.rescheduled_datetime = None
-    meeting.reschedule_reason = None
-    meeting.status = MeetingStatus.REQUESTED
+    if meeting.status != MeetingStatus.RESCHEDULE_PENDING or meeting.pending_proposed_by != ProposedBy.ADMIN:
+        raise BusinessRuleViolation("This meeting has no pending admin reschedule proposal")
+    meeting.pending_start_datetime = meeting.confirmed_start_datetime
+    meeting.pending_end_datetime = meeting.confirmed_end_datetime
+    meeting.pending_proposed_by = None
+    meeting.denial_reason = payload.reason
+    meeting.status = MeetingStatus.CONFIRMED
     db.commit()
     db.refresh(meeting)
     return meeting

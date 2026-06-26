@@ -8,9 +8,10 @@ from app.models.enums import MaintenanceStatus
 
 
 class MaintenanceRecord(Base, TimestampMixin):
-    """One row per client per annual maintenance cycle. `amount` is a snapshot of the
-    client's maintenance_price at the time the cycle was created, since that price can
-    change later without rewriting history."""
+    """One row per client per annual maintenance cycle. `amount` defaults to a snapshot
+    of the client's maintenance_price at creation time, but the admin may override it
+    (e.g. to roll in infrastructure overhead costs) -- either way it's a fixed snapshot
+    that won't change if maintenance_price or infra costs change later."""
 
     __tablename__ = "maintenance_records"
 
@@ -43,6 +44,7 @@ class InfrastructureCostEntry(Base, TimestampMixin):
     feature_request_id: Mapped[int | None] = mapped_column(ForeignKey("feature_requests.id"), nullable=True)
 
     module: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     billing_type: Mapped[str] = mapped_column(String(100), nullable=False)
     monthly_overhead_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 

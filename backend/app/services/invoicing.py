@@ -16,7 +16,7 @@ def build_draft_invoice(client: User, feature_ids: list[int], tax_amount: float,
         .filter(
             FeatureRequest.id.in_(feature_ids),
             FeatureRequest.client_id == client.id,
-            FeatureRequest.status != FeatureRequestStatus.CANCELLED,
+            FeatureRequest.status == FeatureRequestStatus.APPROVED,
             FeatureRequest.added_by_client == True,  # noqa: E712
         )
         .all()

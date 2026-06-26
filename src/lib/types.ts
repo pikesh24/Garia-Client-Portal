@@ -16,22 +16,44 @@ export interface User {
 }
 
 export type MeetingType = "online" | "offline";
-export type MeetingStatus = "requested" | "confirmed" | "rescheduled" | "cancelled" | "completed";
+export type MeetingStatus = "requested" | "confirmed" | "reschedule_pending" | "denied" | "cancelled" | "completed";
+export type ProposedBy = "client" | "admin";
 
 export interface Meeting {
   id: number;
   client_id: number;
   meeting_type: MeetingType;
-  proposed_datetime: string;
   agenda: string;
   status: MeetingStatus;
   meeting_link: string | null;
-  rescheduled_datetime: string | null;
-  reschedule_reason: string | null;
+  confirmed_start_datetime: string | null;
+  confirmed_end_datetime: string | null;
+  pending_start_datetime: string;
+  pending_end_datetime: string;
+  pending_proposed_by: ProposedBy | null;
+  denial_reason: string | null;
   created_at: string;
 }
 
+export interface MeetingAvailability {
+  accepts_online: boolean;
+  accepts_offline: boolean;
+}
+
+export interface BusyRange {
+  start_datetime: string;
+  end_datetime: string;
+}
+
+export interface MeetingBlock {
+  id: number;
+  start_datetime: string;
+  end_datetime: string;
+  reason: string | null;
+}
+
 export type TicketStatus = "open" | "in_progress" | "out_of_scope" | "resolved";
+export type TicketPriority = "low" | "medium" | "high" | "critical";
 
 export interface TicketAttachment {
   id: number;
@@ -51,8 +73,10 @@ export interface TicketStatusHistory {
 export interface Ticket {
   id: number;
   client_id: number;
+  name: string;
   description: string;
   status: TicketStatus;
+  priority: TicketPriority;
   resolution_text: string | null;
   attachments: TicketAttachment[];
   status_history: TicketStatusHistory[];
@@ -60,42 +84,46 @@ export interface Ticket {
 }
 
 export type FeatureRequestStatus =
-  | "initiated"
-  | "clarification_requested"
-  | "quoted"
-  | "accepted"
+  | "under_review"
+  | "approved"
+  | "declined"
   | "in_progress"
   | "completed"
   | "out_of_scope"
   | "cancelled";
 
-export type InitiatedBy = "client" | "garia";
-
-export interface Clarification {
+export interface FeatureRequestMessage {
   id: number;
-  admin_query: string;
-  client_description_override: string | null;
-  resolved: boolean;
+  sender_role: "client" | "admin";
+  body: string;
   created_at: string;
 }
+
+export type ChallengeStatus = "none" | "open" | "approved" | "denied";
 
 export interface FeatureRequest {
   id: number;
   client_id: number;
+  feature_id: string | null;
   name: string;
   description: string;
   status: FeatureRequestStatus;
-  initiated_by: InitiatedBy;
   added_by_client: boolean;
   is_base_feature: boolean;
   base_feature_activated: boolean;
+  challenge_status: ChallengeStatus;
   quoted_frontend_hours: number | null;
   quoted_backend_hours: number | null;
   quoted_production_hours: number | null;
   accepted_terms: boolean;
   actual_hours_taken: number | null;
-  clarifications: Clarification[];
+  agreement_date: string | null;
+  messages: FeatureRequestMessage[];
   created_at: string;
+}
+
+export interface AdminFeatureRequest extends FeatureRequest {
+  price: number | null;
 }
 
 export interface QuoteBreakdown {
@@ -167,6 +195,7 @@ export interface InfrastructureCostEntry {
   client_id: number;
   feature_request_id: number | null;
   module: string;
+  description: string | null;
   billing_type: string;
   monthly_overhead_price: number;
 }

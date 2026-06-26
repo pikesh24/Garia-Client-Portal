@@ -29,15 +29,15 @@ export default function AdminDashboardPage() {
   }, []);
 
   const openTickets = tickets.filter((t) => t.status !== "resolved").length;
-  const pendingMeetings = meetings.filter((m) => m.status === "requested" || m.status === "rescheduled").length;
-  const pendingQuotes = featureRequests.filter((f) => f.status === "initiated" || f.status === "clarification_requested").length;
+  const pendingMeetings = meetings.filter((m) => m.status === "requested" || m.status === "reschedule_pending").length;
+  const pendingFeatureRequests = featureRequests.filter((f) => f.status === "under_review").length;
   const draftInvoices = invoices.filter((i) => i.status === "draft").length;
 
   const stats = [
     { label: "Active Clients", value: clients.filter((c) => c.is_active).length },
     { label: "Pending Meeting Actions", value: pendingMeetings },
     { label: "Open Tickets", value: openTickets },
-    { label: "Feature Requests Awaiting Quote", value: pendingQuotes },
+    { label: "Feature Requests Awaiting Review", value: pendingFeatureRequests },
     { label: "Draft Invoices", value: draftInvoices },
   ];
 

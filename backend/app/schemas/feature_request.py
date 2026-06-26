@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.models.enums import FeatureRequestStatus, InitiatedBy
+from app.models.enums import ChallengeStatus, FeatureRequestStatus, UserRole
 
 
 class FeatureRequestCreateRequest(BaseModel):
@@ -10,35 +11,26 @@ class FeatureRequestCreateRequest(BaseModel):
     description: str
 
 
-class AdminProposeFeatureRequest(BaseModel):
-    client_id: int
+class FeatureRequestUpdateRequest(BaseModel):
     name: str
     description: str
 
 
-class ClarificationCreateRequest(BaseModel):
-    admin_query: str
+class FeatureRequestStatusUpdateRequest(BaseModel):
+    status: Literal["under_review", "approved", "declined"]
 
 
-class ClarificationResponseRequest(BaseModel):
-    client_description_override: str
+class FeatureRequestMessageCreateRequest(BaseModel):
+    body: str
 
 
-class QuoteRequest(BaseModel):
-    quoted_frontend_hours: float
-    quoted_backend_hours: float
-    quoted_production_hours: float
+class FeatureRequestMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-
-class AuthorizeFeatureRequest(BaseModel):
-    accepted_terms: bool
-
-    @field_validator("accepted_terms")
-    @classmethod
-    def must_accept(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError("accepted_terms must be true to authorize this feature")
-        return value
+    id: int
+    sender_role: UserRole
+    body: str
+    created_at: datetime
 
 
 class BaseFeatureActivationRequest(BaseModel):
@@ -56,23 +48,8 @@ class CompleteFeatureRequest(BaseModel):
     actual_hours_taken: float
 
 
-class ClarificationOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    admin_query: str
-    client_description_override: str | None
-    resolved: bool
-    created_at: datetime
-
-
-class QuoteBreakdown(BaseModel):
-    frontend_amount: float
-    backend_amount: float
-    production_amount: float
-    subtotal: float
-    discount_amount: float
-    total: float
+class ChallengeDecisionRequest(BaseModel):
+    decision: Literal["approved", "denied"]
 
 
 class FeatureRequestOut(BaseModel):
@@ -80,17 +57,46 @@ class FeatureRequestOut(BaseModel):
 
     id: int
     client_id: int
+    feature_id: str | None
     name: str
     description: str
     status: FeatureRequestStatus
-    initiated_by: InitiatedBy
     added_by_client: bool
     is_base_feature: bool
     base_feature_activated: bool
+    challenge_status: ChallengeStatus
     quoted_frontend_hours: float | None
     quoted_backend_hours: float | None
     quoted_production_hours: float | None
     accepted_terms: bool
     actual_hours_taken: float | None
-    clarifications: list[ClarificationOut] = []
+    agreement_date: date | None
+    messages: list[FeatureRequestMessageOut] = []
     created_at: datetime
+
+
+class FeatureRequestAdminOut(FeatureRequestOut):
+    """Admin-facing view of a feature request — adds the price, which clients never see."""
+
+    price: float | None
+
+
+class AdminBaseFeatureCreateRequest(BaseModel):
+    feature_id: str | None = None
+    name: str
+    description: str
+    is_base_feature: bool = True
+    quoted_frontend_hours: float | None = None
+    quoted_backend_hours: float | None = None
+    quoted_production_hours: float | None = None
+    agreement_date: date | None = None
+
+
+class AdminFeatureDetailsUpdateRequest(BaseModel):
+    feature_id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    quoted_frontend_hours: float | None = None
+    quoted_backend_hours: float | None = None
+    quoted_production_hours: float | None = None
+    agreement_date: date | None = None

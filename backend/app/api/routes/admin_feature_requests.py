@@ -4,28 +4,33 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_admin
 from app.core.exceptions import BusinessRuleViolation
 from app.db.session import get_db
-from app.models.enums import FeatureRequestStatus, InitiatedBy
-from app.models.feature_request import FeatureRequest, FeatureRequestClarification
+from app.models.enums import ChallengeStatus, FeatureRequestStatus
+from app.models.feature_request import FeatureRequest, FeatureRequestMessage
 from app.models.user import User
 from app.schemas.feature_request import (
-    AdminProposeFeatureRequest,
-    ClarificationCreateRequest,
+    ChallengeDecisionRequest,
     CompleteFeatureRequest,
-    FeatureRequestOut,
-    QuoteBreakdown,
-    QuoteRequest,
+    FeatureRequestAdminOut,
+    FeatureRequestMessageCreateRequest,
+    FeatureRequestMessageOut,
+    FeatureRequestStatusUpdateRequest,
 )
 from app.services.email import notify_feature_request_event
-from app.services.pricing import quote_feature_request
 
 router = APIRouter(
     prefix="/api/admin/feature-requests", tags=["admin-feature-requests"], dependencies=[Depends(require_admin)]
 )
 
 
-@router.get("", response_model=list[FeatureRequestOut])
-def list_all_feature_requests(db: Session = Depends(get_db)):
-    return db.query(FeatureRequest).order_by(FeatureRequest.created_at.desc()).all()
+@router.get("", response_model=list[FeatureRequestAdminOut])
+def list_all_feature_requests(include_base_features: bool = False, db: Session = Depends(get_db)):
+    """Extra features only by default — base features are managed from the client's base
+    project page. Callers that need the full billable set (e.g. invoice generation) can
+    pass include_base_features=true."""
+    query = db.query(FeatureRequest)
+    if not include_base_features:
+        query = query.filter(FeatureRequest.is_base_feature.is_(False))
+    return query.order_by(FeatureRequest.created_at.desc()).all()
 
 
 def _get_fr_or_404(feature_request_id: int, db: Session) -> FeatureRequest:
@@ -35,97 +40,106 @@ def _get_fr_or_404(feature_request_id: int, db: Session) -> FeatureRequest:
     return fr
 
 
-@router.post("/admin-propose", response_model=FeatureRequestOut, status_code=201)
-def propose_feature(payload: AdminProposeFeatureRequest, db: Session = Depends(get_db)):
-    client = db.get(User, payload.client_id)
-    if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-
-    fr = FeatureRequest(
-        client_id=client.id,
-        name=payload.name,
-        description=payload.description,
-        initiated_by=InitiatedBy.GARIA,
-        added_by_client=False,
-    )
-    db.add(fr)
-    db.commit()
-    db.refresh(fr)
-    notify_feature_request_event(client.email, fr.id, "proposed")
-    return fr
+@router.get("/{feature_request_id}/messages", response_model=list[FeatureRequestMessageOut])
+def list_messages(feature_request_id: int, db: Session = Depends(get_db)):
+    fr = _get_fr_or_404(feature_request_id, db)
+    return fr.messages
 
 
-@router.post("/inject-base-feature", response_model=FeatureRequestOut, status_code=201)
-def inject_base_feature(payload: AdminProposeFeatureRequest, db: Session = Depends(get_db)):
-    """Admin injects a base feature directly into a client's dashboard. It renders
-    unactivated until the client confirms the irreversible activation checkbox."""
-    client = db.get(User, payload.client_id)
-    if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-
-    fr = FeatureRequest(
-        client_id=client.id,
-        name=payload.name,
-        description=payload.description,
-        initiated_by=InitiatedBy.GARIA,
-        added_by_client=False,
-        is_base_feature=True,
-        status=FeatureRequestStatus.ACCEPTED,
-    )
-    db.add(fr)
-    db.commit()
-    db.refresh(fr)
-    notify_feature_request_event(client.email, fr.id, "added as a base feature")
-    return fr
-
-
-@router.post("/{feature_request_id}/clarify", response_model=FeatureRequestOut)
-def raise_clarification(
-    feature_request_id: int, payload: ClarificationCreateRequest, db: Session = Depends(get_db)
+@router.post("/{feature_request_id}/messages", response_model=FeatureRequestMessageOut, status_code=201)
+def create_message(
+    feature_request_id: int,
+    payload: FeatureRequestMessageCreateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
     fr = _get_fr_or_404(feature_request_id, db)
-    db.add(FeatureRequestClarification(feature_request_id=fr.id, admin_query=payload.admin_query))
-    fr.status = FeatureRequestStatus.CLARIFICATION_REQUESTED
+    message = FeatureRequestMessage(
+        feature_request_id=fr.id, sender_id=current_user.id, sender_role=current_user.role, body=payload.body
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    client = db.get(User, fr.client_id)
+    if client:
+        notify_feature_request_event(client.email, fr.id, "needs clarification")
+    return message
+
+
+@router.get("/{feature_request_id}/challenge-messages", response_model=list[FeatureRequestMessageOut])
+def list_challenge_messages(feature_request_id: int, db: Session = Depends(get_db)):
+    fr = _get_fr_or_404(feature_request_id, db)
+    return [m for m in fr.messages if m.is_challenge]
+
+
+@router.post("/{feature_request_id}/challenge-messages", response_model=FeatureRequestMessageOut, status_code=201)
+def create_challenge_message(
+    feature_request_id: int,
+    payload: FeatureRequestMessageCreateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    fr = _get_fr_or_404(feature_request_id, db)
+    if fr.challenge_status != ChallengeStatus.OPEN:
+        raise BusinessRuleViolation("There is no open challenge for this feature")
+    message = FeatureRequestMessage(
+        feature_request_id=fr.id,
+        sender_id=current_user.id,
+        sender_role=current_user.role,
+        body=payload.body,
+        is_challenge=True,
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+@router.patch("/{feature_request_id}/challenge-decision", response_model=FeatureRequestAdminOut)
+def decide_challenge(
+    feature_request_id: int,
+    payload: ChallengeDecisionRequest,
+    db: Session = Depends(get_db),
+):
+    fr = _get_fr_or_404(feature_request_id, db)
+    if fr.challenge_status != ChallengeStatus.OPEN:
+        raise BusinessRuleViolation("There is no open challenge for this feature")
+    fr.challenge_status = ChallengeStatus.APPROVED if payload.decision == "approved" else ChallengeStatus.DENIED
+    db.commit()
+    db.refresh(fr)
+    return fr
+
+
+@router.patch("/{feature_request_id}/status", response_model=FeatureRequestAdminOut)
+def update_status(
+    feature_request_id: int, payload: FeatureRequestStatusUpdateRequest, db: Session = Depends(get_db)
+):
+    fr = _get_fr_or_404(feature_request_id, db)
+    fr.status = FeatureRequestStatus(payload.status)
+    if fr.status == FeatureRequestStatus.APPROVED:
+        fr.added_by_client = True
     db.commit()
     db.refresh(fr)
 
     client = db.get(User, fr.client_id)
     if client:
-        notify_feature_request_event(client.email, fr.id, "needs clarification")
+        notify_feature_request_event(client.email, fr.id, payload.status)
     return fr
 
 
-@router.post("/{feature_request_id}/quote", response_model=QuoteBreakdown)
-def quote_feature(feature_request_id: int, payload: QuoteRequest, db: Session = Depends(get_db)):
-    fr = _get_fr_or_404(feature_request_id, db)
-    client = db.get(User, fr.client_id)
-    if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-
-    fr.quoted_frontend_hours = payload.quoted_frontend_hours
-    fr.quoted_backend_hours = payload.quoted_backend_hours
-    fr.quoted_production_hours = payload.quoted_production_hours
-    fr.status = FeatureRequestStatus.QUOTED
-    db.commit()
-    db.refresh(fr)
-
-    notify_feature_request_event(client.email, fr.id, "quoted")
-    breakdown = quote_feature_request(fr, client, db)
-    return QuoteBreakdown(**breakdown)
-
-
-@router.patch("/{feature_request_id}/start", response_model=FeatureRequestOut)
+@router.patch("/{feature_request_id}/start", response_model=FeatureRequestAdminOut)
 def start_feature(feature_request_id: int, db: Session = Depends(get_db)):
     fr = _get_fr_or_404(feature_request_id, db)
-    if fr.status != FeatureRequestStatus.ACCEPTED:
-        raise BusinessRuleViolation("Only client-authorized feature requests can be started")
+    if fr.status != FeatureRequestStatus.APPROVED:
+        raise BusinessRuleViolation("Only approved feature requests can be started")
     fr.status = FeatureRequestStatus.IN_PROGRESS
     db.commit()
     db.refresh(fr)
     return fr
 
 
-@router.patch("/{feature_request_id}/complete", response_model=FeatureRequestOut)
+@router.patch("/{feature_request_id}/complete", response_model=FeatureRequestAdminOut)
 def complete_feature(
     feature_request_id: int, payload: CompleteFeatureRequest, db: Session = Depends(get_db)
 ):
@@ -142,22 +156,10 @@ def complete_feature(
     return fr
 
 
-@router.patch("/{feature_request_id}/mark-out-of-scope", response_model=FeatureRequestOut)
+@router.patch("/{feature_request_id}/mark-out-of-scope", response_model=FeatureRequestAdminOut)
 def mark_out_of_scope(feature_request_id: int, db: Session = Depends(get_db)):
     fr = _get_fr_or_404(feature_request_id, db)
     fr.status = FeatureRequestStatus.OUT_OF_SCOPE
-    db.commit()
-    db.refresh(fr)
-    return fr
-
-
-@router.put("/{feature_request_id}", response_model=FeatureRequestOut)
-def overwrite_feature_request(
-    feature_request_id: int, payload: AdminProposeFeatureRequest, db: Session = Depends(get_db)
-):
-    fr = _get_fr_or_404(feature_request_id, db)
-    fr.name = payload.name
-    fr.description = payload.description
     db.commit()
     db.refresh(fr)
     return fr

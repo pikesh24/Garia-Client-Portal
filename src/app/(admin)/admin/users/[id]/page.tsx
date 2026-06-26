@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { User } from "@/lib/types";
@@ -81,7 +82,16 @@ export default function AdminClientDetailPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`Configure ${client.full_name}`} />
+      <PageHeader
+        title={`Configure ${client.full_name}`}
+        action={
+          <Link href={`/admin/feature-requests/base-features/${client.id}`}>
+            <Button type="button" variant="secondary">
+              Manage Base + Extra Features
+            </Button>
+          </Link>
+        }
+      />
       <Card>
         <CardHeader>Detailed Client Profile Configuration</CardHeader>
         <CardBody>

@@ -34,6 +34,28 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * FastAPI returns `detail` as a plain string for our own HTTPException subclasses,
+ * but as a list of {msg, loc, ...} objects for pydantic validation errors (422).
+ * Stringifying that list directly yields "[object Object]" — this picks out the message.
+ */
+export function formatApiError(err: unknown, fallback = "Something went wrong"): string {
+  if (err instanceof ApiError) {
+    const d = err.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) {
+      return d
+        .map((item) => (item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : JSON.stringify(item)))
+        .join("; ");
+    }
+    if (d && typeof d === "object") {
+      if ("msg" in d) return String((d as { msg: unknown }).msg);
+      return JSON.stringify(d);
+    }
+  }
+  return fallback;
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
@@ -82,6 +104,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (token) {
       res = await doFetch(token);
     }
+  }
+
+  if (!skipAuth && res.status === 401) {
+    clearTokens();
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+    throw new ApiError(401, "Session expired");
   }
 
   if (!res.ok) {

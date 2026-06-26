@@ -14,9 +14,15 @@ class MeetingType(str, enum.Enum):
 class MeetingStatus(str, enum.Enum):
     REQUESTED = "requested"
     CONFIRMED = "confirmed"
-    RESCHEDULED = "rescheduled"
+    RESCHEDULE_PENDING = "reschedule_pending"
+    DENIED = "denied"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
+
+
+class ProposedBy(str, enum.Enum):
+    CLIENT = "client"
+    ADMIN = "admin"
 
 
 class TicketStatus(str, enum.Enum):
@@ -26,20 +32,28 @@ class TicketStatus(str, enum.Enum):
     RESOLVED = "resolved"
 
 
+class TicketPriority(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
 class FeatureRequestStatus(str, enum.Enum):
-    INITIATED = "initiated"
-    CLARIFICATION_REQUESTED = "clarification_requested"
-    QUOTED = "quoted"
-    ACCEPTED = "accepted"
+    UNDER_REVIEW = "under_review"
+    APPROVED = "approved"
+    DECLINED = "declined"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     OUT_OF_SCOPE = "out_of_scope"
     CANCELLED = "cancelled"
 
 
-class InitiatedBy(str, enum.Enum):
-    CLIENT = "client"
-    GARIA = "garia"
+class ChallengeStatus(str, enum.Enum):
+    NONE = "none"
+    OPEN = "open"
+    APPROVED = "approved"
+    DENIED = "denied"
 
 
 class DiscountType(str, enum.Enum):

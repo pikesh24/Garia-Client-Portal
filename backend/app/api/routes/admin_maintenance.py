@@ -38,7 +38,7 @@ def create_maintenance_cycle(payload: MaintenanceCycleCreateRequest, db: Session
         client_id=client.id,
         cycle_year=payload.cycle_year,
         due_date=payload.due_date,
-        amount=client.maintenance_price,
+        amount=payload.amount if payload.amount is not None else client.maintenance_price,
     )
     db.add(record)
     db.commit()
@@ -91,10 +91,12 @@ def reject_proof(record_id: int, payload: MaintenanceRejectRequest, db: Session 
 
 
 @router.get("/infrastructure-costs", response_model=list[InfrastructureCostEntryOut])
-def list_infra_costs(client_id: int | None = None, db: Session = Depends(get_db)):
+def list_infra_costs(client_id: int | None = None, feature_request_id: int | None = None, db: Session = Depends(get_db)):
     query = db.query(InfrastructureCostEntry)
     if client_id is not None:
         query = query.filter(InfrastructureCostEntry.client_id == client_id)
+    if feature_request_id is not None:
+        query = query.filter(InfrastructureCostEntry.feature_request_id == feature_request_id)
     return query.all()
 
 

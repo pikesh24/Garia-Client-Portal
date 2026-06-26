@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 interface NavLink {
   href: string;
@@ -25,10 +25,12 @@ const adminLinks: NavLink[] = [
   { href: "/admin/tickets", label: "Support Tickets", icon: "receipt_long" },
   { href: "/admin/feature-requests", label: "Features", icon: "inventory_2" },
   { href: "/admin/billing", label: "Billing", icon: "receipt_long" },
+  { href: "/admin/maintenance", label: "Maintenance", icon: "settings" },
 ];
 
 export function Sidebar({ variant }: { variant: "client" | "admin" }) {
   const pathname = usePathname();
+  const router = useRouter();
   const links = variant === "client" ? clientLinks : adminLinks;
 
   return (
@@ -58,9 +60,14 @@ export function Sidebar({ variant }: { variant: "client" | "admin" }) {
       </div>
 
       <div className="px-gutter mt-auto pt-8 border-t-2 border-border-strong mx-4">
-        <button className="w-full bg-bg-panel text-text-inverse border-2 border-border-strong font-label-caps text-label-caps font-bold py-3 uppercase shadow-[4px_4px_0px_0px_#ED4A3F] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#ED4A3F] active:translate-y-1 active:translate-x-1 active:shadow-none transition-all">
-          NEW TICKET
-        </button>
+        {variant === "client" && (
+          <button
+            onClick={() => router.push("/tickets")}
+            className="w-full bg-bg-panel text-text-inverse border-2 border-border-strong font-label-caps text-label-caps font-bold py-3 uppercase shadow-[4px_4px_0px_0px_#ED4A3F] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#ED4A3F] active:translate-y-1 active:translate-x-1 active:shadow-none transition-all"
+          >
+            NEW TICKET
+          </button>
+        )}
         <div className="flex justify-between mt-8 text-text-muted">
           <button className="hover:text-coral-red transition-colors" title="DOCUMENTATION">
             <span className="material-symbols-outlined" data-icon="menu_book">menu_book</span>

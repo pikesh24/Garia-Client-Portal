@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
+    admin_base_project,
     admin_billing,
     admin_discounts,
     admin_feature_requests,
@@ -50,6 +51,7 @@ app.include_router(maintenance.router)
 
 # Admin routers
 app.include_router(admin_users.router)
+app.include_router(admin_base_project.router)
 app.include_router(admin_meetings.router)
 app.include_router(admin_tickets.router)
 app.include_router(admin_feature_requests.router)

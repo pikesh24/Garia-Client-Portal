@@ -9,6 +9,7 @@ class MaintenanceCycleCreateRequest(BaseModel):
     client_id: int
     cycle_year: int
     due_date: date
+    amount: float | None = None
 
 
 class MaintenanceRejectRequest(BaseModel):
@@ -35,7 +36,8 @@ class InfrastructureCostEntryCreateRequest(BaseModel):
     client_id: int
     feature_request_id: int | None = None
     module: str
-    billing_type: str
+    description: str | None = None
+    billing_type: str = "recurring"
     monthly_overhead_price: float
 
 
@@ -46,5 +48,6 @@ class InfrastructureCostEntryOut(BaseModel):
     client_id: int
     feature_request_id: int | None
     module: str
+    description: str | None
     billing_type: str
     monthly_overhead_price: float

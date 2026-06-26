@@ -89,11 +89,41 @@ export function Field({ children }: { children: ReactNode }) {
   return <div className="mb-6">{children}</div>;
 }
 
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <span
+        className={`relative h-6 w-11 shrink-0 border-2 border-border-strong transition-colors ${checked ? "bg-coral-red" : "bg-bg-panel-alt"}`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 border border-border-strong bg-bg-base transition-all ${checked ? "left-[22px]" : "left-0.5"}`}
+        />
+      </span>
+      <span className="font-label-caps text-label-caps uppercase tracking-[0.1em] text-text-main">{label}</span>
+    </button>
+  );
+}
+
 const badgeColors: Record<string, string> = {
-  positive: "border-[#00FF00] text-[#00FF00] hover:bg-[#00FF00] hover:text-black",
-  warning: "border-[#ffc107] text-[#ffc107] hover:bg-[#ffc107] hover:text-black",
-  neutral: "border-text-muted text-text-muted hover:bg-text-muted hover:text-black",
-  danger: "border-coral-red text-coral-red hover:bg-coral-red hover:text-white",
+  positive: "bg-positive border-positive text-text-inverse",
+  warning: "bg-warning border-warning text-text-inverse",
+  neutral: "bg-text-muted border-text-muted text-text-inverse",
+  danger: "bg-coral-red border-coral-red text-text-inverse",
 };
 
 const statusBadgeMap: Record<string, keyof typeof badgeColors> = {
@@ -103,13 +133,12 @@ const statusBadgeMap: Record<string, keyof typeof badgeColors> = {
   resolved: "positive",
   requested: "warning",
   confirmed: "positive",
-  rescheduled: "warning",
+  reschedule_pending: "warning",
+  denied: "danger",
   cancelled: "neutral",
   completed: "positive",
-  initiated: "neutral",
-  clarification_requested: "warning",
-  quoted: "warning",
-  accepted: "positive",
+  under_review: "warning",
+  declined: "danger",
   pending: "neutral",
   proof_submitted: "warning",
   approved: "positive",
@@ -117,13 +146,15 @@ const statusBadgeMap: Record<string, keyof typeof badgeColors> = {
   draft: "neutral",
   finalized: "positive",
   paid: "positive",
+  active: "positive",
+  inactive: "neutral",
 }
 
 export function StatusBadge({ status }: { status: string }) {
   const bucket = statusBadgeMap[status] ?? "neutral";
   return (
     <span
-      className={`inline-block border px-2 py-1 font-data-mono text-[10px] uppercase tracking-wider transition-colors group-hover:bg-opacity-100 ${badgeColors[bucket]} group-hover:bg-current group-hover:text-black`}
+      className={`inline-block border px-2 py-1 font-data-mono text-[10px] uppercase tracking-wider ${badgeColors[bucket]}`}
     >
       {status.replace(/_/g, " ")}
     </span>
@@ -182,8 +213,8 @@ export function Th({ children }: { children?: ReactNode }) {
   );
 }
 
-export function Td({ children, className = "" }: { children?: ReactNode; className?: string }) {
-  return <td className={`py-2 text-text-main border-b border-border-subtle font-data-mono text-data-mono ${className}`}>{children}</td>;
+export function Td({ children, className = "", colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) {
+  return <td colSpan={colSpan} className={`py-2 text-text-main border-b border-border-subtle font-data-mono text-data-mono ${className}`}>{children}</td>;
 }
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {

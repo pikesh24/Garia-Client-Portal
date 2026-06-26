@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { Discount, Invoice, MaintenanceRecord } from "@/lib/types";
 import { PageHeader } from "@/components/ui";
 
 export default function ClientDashboardPage() {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
@@ -64,7 +66,10 @@ export default function ClientDashboardPage() {
                   REQUIRED BY: {m.penalty_deadline ? new Date(m.penalty_deadline).toLocaleString() : "DEADLINE"}
                 </div>
               ))}
-              <button className="bg-bg-panel text-text-inverse font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 border-border-strong shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all">
+              <button
+                onClick={() => router.push("/tickets")}
+                className="bg-bg-panel text-text-inverse font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 border-border-strong shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all"
+              >
                 REVIEW_TICKETS
               </button>
             </div>
@@ -225,7 +230,7 @@ function DownloadButton({ invoiceId }: { invoiceId: number }) {
 
   return (
     <button onClick={download} className="font-data-mono text-data-mono tracking-[0.1em] uppercase text-coral-red hover:underline decoration-2 underline-offset-4">
-      EXPORT
+      DOWNLOAD SIGNED DOCUMENT PACKAGE
     </button>
   );
 }

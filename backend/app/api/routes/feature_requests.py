@@ -4,18 +4,17 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_client
 from app.core.exceptions import BusinessRuleViolation, IrreversibleActionConflict
 from app.db.session import get_db
-from app.models.enums import FeatureRequestStatus, InitiatedBy
-from app.models.feature_request import FeatureRequest, FeatureRequestClarification
+from app.models.enums import ChallengeStatus, FeatureRequestStatus
+from app.models.feature_request import FeatureRequest, FeatureRequestMessage
 from app.models.user import User
 from app.schemas.feature_request import (
-    AuthorizeFeatureRequest,
     BaseFeatureActivationRequest,
-    ClarificationResponseRequest,
     FeatureRequestCreateRequest,
+    FeatureRequestMessageCreateRequest,
+    FeatureRequestMessageOut,
     FeatureRequestOut,
-    QuoteBreakdown,
+    FeatureRequestUpdateRequest,
 )
-from app.services.pricing import quote_feature_request
 
 router = APIRouter(prefix="/api/feature-requests", tags=["feature-requests"], dependencies=[Depends(require_client)])
 
@@ -31,7 +30,7 @@ def _get_own_feature_request(feature_request_id: int, current_user: User, db: Se
 def list_my_feature_requests(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
     return (
         db.query(FeatureRequest)
-        .filter(FeatureRequest.client_id == current_user.id)
+        .filter(FeatureRequest.client_id == current_user.id, FeatureRequest.is_base_feature == False)  # noqa: E712
         .order_by(FeatureRequest.created_at.desc())
         .all()
     )
@@ -43,77 +42,53 @@ def create_feature_request(
     current_user: User = Depends(require_client),
     db: Session = Depends(get_db),
 ):
-    fr = FeatureRequest(
-        client_id=current_user.id,
-        name=payload.name,
-        description=payload.description,
-        initiated_by=InitiatedBy.CLIENT,
-        added_by_client=True,
-    )
+    fr = FeatureRequest(client_id=current_user.id, name=payload.name, description=payload.description)
     db.add(fr)
     db.commit()
     db.refresh(fr)
     return fr
 
 
-@router.get("/{feature_request_id}/quote", response_model=QuoteBreakdown)
-def get_quote_breakdown(
+@router.put("/{feature_request_id}", response_model=FeatureRequestOut)
+def update_feature_request(
+    feature_request_id: int,
+    payload: FeatureRequestUpdateRequest,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    """The client edits their own request's name/description and resubmits it for review."""
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr.name = payload.name
+    fr.description = payload.description
+    fr.status = FeatureRequestStatus.UNDER_REVIEW
+    db.commit()
+    db.refresh(fr)
+    return fr
+
+
+@router.get("/{feature_request_id}/messages", response_model=list[FeatureRequestMessageOut])
+def list_messages(
     feature_request_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
 ):
     fr = _get_own_feature_request(feature_request_id, current_user, db)
-    if fr.status not in (FeatureRequestStatus.QUOTED, FeatureRequestStatus.ACCEPTED):
-        raise BusinessRuleViolation("This feature request has not been quoted yet")
-    breakdown = quote_feature_request(fr, current_user, db)
-    return QuoteBreakdown(**breakdown)
+    return fr.messages
 
 
-@router.post("/{feature_request_id}/respond-clarification", response_model=FeatureRequestOut)
-def respond_to_clarification(
+@router.post("/{feature_request_id}/messages", response_model=FeatureRequestMessageOut, status_code=201)
+def create_message(
     feature_request_id: int,
-    payload: ClarificationResponseRequest,
+    payload: FeatureRequestMessageCreateRequest,
     current_user: User = Depends(require_client),
     db: Session = Depends(get_db),
 ):
-    """One-way modification rule: the client cannot free-chat back; submitting this
-    fully overrides the feature request description and resolves the open query."""
     fr = _get_own_feature_request(feature_request_id, current_user, db)
-    open_clarification = (
-        db.query(FeatureRequestClarification)
-        .filter(FeatureRequestClarification.feature_request_id == fr.id, FeatureRequestClarification.resolved == False)  # noqa: E712
-        .order_by(FeatureRequestClarification.created_at.desc())
-        .first()
+    message = FeatureRequestMessage(
+        feature_request_id=fr.id, sender_id=current_user.id, sender_role=current_user.role, body=payload.body
     )
-    if not open_clarification:
-        raise BusinessRuleViolation("There is no open clarification request to respond to")
-
-    open_clarification.client_description_override = payload.client_description_override
-    open_clarification.resolved = True
-    fr.description = payload.client_description_override
-    fr.status = FeatureRequestStatus.INITIATED
+    db.add(message)
     db.commit()
-    db.refresh(fr)
-    return fr
-
-
-@router.post("/{feature_request_id}/authorize", response_model=FeatureRequestOut)
-def authorize_feature(
-    feature_request_id: int,
-    payload: AuthorizeFeatureRequest,
-    current_user: User = Depends(require_client),
-    db: Session = Depends(get_db),
-):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
-    if fr.accepted_terms:
-        raise IrreversibleActionConflict("This feature request has already been authorized")
-    if fr.status != FeatureRequestStatus.QUOTED:
-        raise BusinessRuleViolation("Only quoted feature requests can be authorized")
-
-    fr.accepted_terms = payload.accepted_terms
-    fr.status = FeatureRequestStatus.ACCEPTED
-    fr.added_by_client = True
-    db.commit()
-    db.refresh(fr)
-    return fr
+    db.refresh(message)
+    return message
 
 
 @router.post("/{feature_request_id}/activate-base-feature", response_model=FeatureRequestOut)
@@ -136,6 +111,75 @@ def activate_base_feature(
     return fr
 
 
+@router.post("/{feature_request_id}/decline-base-feature", response_model=FeatureRequestOut)
+def decline_base_feature(
+    feature_request_id: int,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    if not fr.is_base_feature:
+        raise BusinessRuleViolation("This is not a base feature")
+    if fr.base_feature_activated:
+        raise IrreversibleActionConflict("This base feature has already been activated")
+
+    fr.status = FeatureRequestStatus.DECLINED
+    db.commit()
+    db.refresh(fr)
+    return fr
+
+
+@router.post("/{feature_request_id}/challenge", response_model=FeatureRequestOut)
+def open_challenge(
+    feature_request_id: int,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    if not fr.is_base_feature:
+        raise BusinessRuleViolation("Only base features can be challenged")
+    if fr.base_feature_activated:
+        raise IrreversibleActionConflict("This base feature has already been activated")
+    if fr.challenge_status == ChallengeStatus.OPEN:
+        raise BusinessRuleViolation("A challenge is already open for this feature")
+
+    fr.challenge_status = ChallengeStatus.OPEN
+    db.commit()
+    db.refresh(fr)
+    return fr
+
+
+@router.get("/{feature_request_id}/challenge-messages", response_model=list[FeatureRequestMessageOut])
+def list_challenge_messages(
+    feature_request_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
+):
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    return [m for m in fr.messages if m.is_challenge]
+
+
+@router.post("/{feature_request_id}/challenge-messages", response_model=FeatureRequestMessageOut, status_code=201)
+def create_challenge_message(
+    feature_request_id: int,
+    payload: FeatureRequestMessageCreateRequest,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    if fr.challenge_status != ChallengeStatus.OPEN:
+        raise BusinessRuleViolation("There is no open challenge for this feature")
+    message = FeatureRequestMessage(
+        feature_request_id=fr.id,
+        sender_id=current_user.id,
+        sender_role=current_user.role,
+        body=payload.body,
+        is_challenge=True,
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
 @router.post("/{feature_request_id}/request-cancellation-review", response_model=FeatureRequestOut)
 def request_cancellation_review(
     feature_request_id: int,
@@ -146,6 +190,30 @@ def request_cancellation_review(
     if fr.is_base_feature and fr.base_feature_activated:
         raise IrreversibleActionConflict("This base feature has already been activated and cannot be cancelled")
     fr.status = FeatureRequestStatus.OUT_OF_SCOPE
+    db.commit()
+    db.refresh(fr)
+    return fr
+
+
+@router.post("/{feature_request_id}/approve", response_model=FeatureRequestOut)
+def approve_feature_request(
+    feature_request_id: int,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    from datetime import date
+    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    
+    fr.accepted_terms = True
+    fr.status = FeatureRequestStatus.APPROVED
+    
+    if fr.is_base_feature:
+        fr.base_feature_activated = True
+        fr.added_by_client = True
+        
+    if not fr.agreement_date:
+        fr.agreement_date = date.today().isoformat()
+        
     db.commit()
     db.refresh(fr)
     return fr

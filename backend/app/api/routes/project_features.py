@@ -14,10 +14,12 @@ router = APIRouter(prefix="/api/project-features", tags=["project-features"], de
 def get_project_features(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
     features = (
         db.query(FeatureRequest)
-        .filter(FeatureRequest.client_id == current_user.id, FeatureRequest.added_by_client == True)  # noqa: E712
+        .filter(FeatureRequest.client_id == current_user.id)
         .order_by(FeatureRequest.created_at.desc())
         .all()
     )
+    # Base features must always be visible so the client can act on them (activate/decline).
+    # Extra features only show once they've been approved into the client's active scope.
     base_features = [f for f in features if f.is_base_feature]
-    extra_features = [f for f in features if not f.is_base_feature]
+    extra_features = [f for f in features if not f.is_base_feature and f.added_by_client]
     return ProjectFeaturesOut(base_features=base_features, extra_features=extra_features)

@@ -33,6 +33,7 @@ def get_my_ticket(ticket_id: int, current_user: User = Depends(require_client), 
 
 @router.post("", response_model=TicketOut, status_code=201)
 def file_ticket(
+    name: str = Form(...),
     description: str = Form(...),
     file_upload: UploadFile = File(...),
     current_user: User = Depends(require_client),
@@ -41,7 +42,7 @@ def file_ticket(
     if not file_upload or not file_upload.filename:
         raise BusinessRuleViolation("An attachment is required to file an incident ticket")
 
-    ticket = SupportTicket(client_id=current_user.id, description=description, status=TicketStatus.OPEN)
+    ticket = SupportTicket(client_id=current_user.id, name=name, description=description, status=TicketStatus.OPEN)
     db.add(ticket)
     db.flush()
 

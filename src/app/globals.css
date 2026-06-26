@@ -6,6 +6,7 @@
   --bg-panel-alt: #F2ECE0;
   --accent: #ED4A3F;
   --positive: #1E8A4F;
+  --warning: #B25E00;
   --text-main: #2A2E33;
   --text-inverse: #E8E2D6;
   --text-muted: #8A8F95;
@@ -19,6 +20,7 @@ html.dark {
   --bg-panel-alt: #21272D;
   --accent: #ED4A3F;
   --positive: #00FF00;
+  --warning: #FFC107;
   --text-main: #E8E2D6;
   --text-inverse: #151A21;
   --text-muted: #c1c7ce;
@@ -37,6 +39,15 @@ html.dark {
   --color-border-strong: var(--border-strong);
   --color-border-subtle: var(--border-subtle);
   --color-positive: var(--positive);
+  --color-warning: var(--warning);
+
+  /* Aliases for an older token naming scheme still used on some pages */
+  --color-amber: var(--accent);
+  --color-gold: var(--accent);
+  --color-canvas: var(--bg-base);
+  --color-text-primary: var(--text-main);
+  --color-text-heading: var(--text-main);
+  --color-border-muted: var(--border-subtle);
 
   /* Colors */
   --color-on-tertiary-fixed-variant: #004f54;
@@ -65,7 +76,6 @@ html.dark {
   --color-background: #fff8f7;
   --color-surface-dim: #f0d4d0;
   --color-on-tertiary-container: #f5feff;
-  --color-text-muted: #8A8F95;
   --color-on-primary-container: #fffbff;
   --color-surface-container: #ffe9e6;
   --color-on-surface: #271816;
