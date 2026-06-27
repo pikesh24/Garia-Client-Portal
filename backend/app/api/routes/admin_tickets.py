@@ -5,6 +5,7 @@ from app.api.deps import require_admin
 from app.core.exceptions import BusinessRuleViolation
 from app.db.session import get_db
 from app.models.enums import TicketStatus
+from app.models.project import Project
 from app.models.ticket import SupportTicket, TicketAttachment, TicketStatusHistory
 from app.models.user import User
 from app.schemas.ticket import TicketOut
@@ -13,10 +14,34 @@ from app.services.file_storage import save_upload
 
 router = APIRouter(prefix="/api/admin/tickets", tags=["admin-tickets"], dependencies=[Depends(require_admin)])
 
+project_scoped_router = APIRouter(
+    prefix="/api/admin/projects/{project_id}/tickets",
+    tags=["admin-tickets"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+def _get_project_or_404(project_id: int, db: Session) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
+
 
 @router.get("", response_model=list[TicketOut])
 def list_all_tickets(db: Session = Depends(get_db)):
     return db.query(SupportTicket).order_by(SupportTicket.created_at.desc()).all()
+
+
+@project_scoped_router.get("", response_model=list[TicketOut])
+def list_project_tickets(project_id: int, db: Session = Depends(get_db)):
+    _get_project_or_404(project_id, db)
+    return (
+        db.query(SupportTicket)
+        .filter(SupportTicket.project_id == project_id)
+        .order_by(SupportTicket.created_at.desc())
+        .all()
+    )
 
 
 def _get_ticket_or_404(ticket_id: int, db: Session) -> SupportTicket:

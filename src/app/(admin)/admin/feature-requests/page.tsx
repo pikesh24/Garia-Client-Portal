@@ -29,7 +29,7 @@ export default function AdminFeaturesLandingPage() {
             Base + Extra Features
           </h3>
           <p className="text-sm text-text-muted">
-            Select a client to view and manage their base project and extra features, hours, and pricing.
+            Select a client, then a project, to view and manage its base project and extra features, hours, and pricing.
           </p>
         </Link>
       </div>

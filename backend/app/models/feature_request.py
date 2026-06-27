@@ -12,6 +12,7 @@ class FeatureRequest(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     # Admin-assigned business identifier (e.g. "F-001"), distinct from the internal primary key.
     feature_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -48,6 +49,7 @@ class FeatureRequest(Base, TimestampMixin):
     agreement_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()
     messages: Mapped[list["FeatureRequestMessage"]] = relationship(
         back_populates="feature_request", cascade="all, delete-orphan", order_by="FeatureRequestMessage.created_at"
     )

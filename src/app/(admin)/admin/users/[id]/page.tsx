@@ -45,30 +45,6 @@ export default function AdminClientDetailPage() {
     }
   }
 
-  async function overwrite() {
-    setError(null);
-    setMessage(null);
-    try {
-      const updated = await apiRequest<User>(`/api/admin/users/${client!.id}`, {
-        method: "PUT",
-        body: {
-          full_name: client!.full_name,
-          email: client!.email,
-          can_book_offline_meeting: client!.can_book_offline_meeting,
-          hourly_rate_frontend: client!.hourly_rate_frontend,
-          hourly_rate_backend: client!.hourly_rate_backend,
-          hourly_rate_production: client!.hourly_rate_production,
-          maintenance_price: client!.maintenance_price,
-          project_start_date: client!.project_start_date,
-        },
-      });
-      setClient(updated);
-      setMessage("Account master record overwritten.");
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Overwrite failed");
-    }
-  }
-
   async function deactivate() {
     const updated = await apiRequest<User>(`/api/admin/users/${client!.id}/deactivate`, { method: "POST" });
     setClient(updated);
@@ -85,7 +61,7 @@ export default function AdminClientDetailPage() {
       <PageHeader
         title={`Configure ${client.full_name}`}
         action={
-          <Link href={`/admin/feature-requests/base-features/${client.id}`}>
+          <Link href={`/admin/users/${client.id}/projects`}>
             <Button type="button" variant="secondary">
               Manage Base + Extra Features
             </Button>
@@ -169,9 +145,6 @@ export default function AdminClientDetailPage() {
 
             <div className="flex flex-wrap items-center gap-2 md:col-span-3">
               <Button type="submit">Commit Account Configuration Updates</Button>
-              <Button type="button" variant="secondary" onClick={overwrite}>
-                Overwrite Account Master Record
-              </Button>
               <Button type="button" variant="secondary" onClick={deactivate} disabled={!client.is_active}>
                 Deactivate Client Profile Identity
               </Button>

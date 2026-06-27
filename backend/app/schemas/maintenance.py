@@ -12,6 +12,15 @@ class MaintenanceCycleCreateRequest(BaseModel):
     amount: float | None = None
 
 
+class ProjectMaintenanceCycleCreateRequest(BaseModel):
+    """Same as MaintenanceCycleCreateRequest but without client_id -- the client is derived
+    from the project on the path (a project has exactly one client)."""
+
+    cycle_year: int
+    due_date: date
+    amount: float | None = None
+
+
 class MaintenanceRejectRequest(BaseModel):
     rejection_reason: str
 
@@ -21,6 +30,7 @@ class MaintenanceRecordOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     cycle_year: int
     due_date: date
     amount: float
@@ -41,11 +51,23 @@ class InfrastructureCostEntryCreateRequest(BaseModel):
     monthly_overhead_price: float
 
 
+class ProjectInfrastructureCostEntryCreateRequest(BaseModel):
+    """Same as InfrastructureCostEntryCreateRequest but without client_id -- the client is
+    derived from the project on the path (a project has exactly one client)."""
+
+    feature_request_id: int | None = None
+    module: str
+    description: str | None = None
+    billing_type: str = "recurring"
+    monthly_overhead_price: float
+
+
 class InfrastructureCostEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     client_id: int
+    project_id: int
     feature_request_id: int | None
     module: str
     description: str | None

@@ -6,16 +6,24 @@ import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage } from "@/lib/types";
 import { Alert, Button, Label, Modal, PageHeader, StatusBadge, Textarea } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
+import { useAdminProjectFilter } from "@/components/AdminProjectFilter";
+import { ClientProjectCardPicker } from "@/components/ClientProjectCardPicker";
 
 export default function AdminFeatureRequestsPage() {
+  const [filter, setFilter] = useAdminProjectFilter();
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<FeatureRequest | null>(null);
 
   async function load() {
+    if (!filter.projectId) {
+      setRequests([]);
+      return;
+    }
+    setLoading(true);
     try {
-      const data = await apiRequest<FeatureRequest[]>("/api/admin/feature-requests");
+      const data = await apiRequest<FeatureRequest[]>(`/api/admin/projects/${filter.projectId}/feature-requests`);
       setRequests(data);
       if (selected) setSelected(data.find((f) => f.id === selected.id) ?? null);
     } catch (err) {
@@ -27,7 +35,7 @@ export default function AdminFeatureRequestsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [filter.projectId]);
 
   return (
     <div className="space-y-6">
@@ -40,14 +48,22 @@ export default function AdminFeatureRequestsPage() {
         }
       />
 
+      <ClientProjectCardPicker value={filter} onChange={setFilter} />
+
       {error && <Alert>{error}</Alert>}
 
-      {loading ? (
+      {!filter.projectId ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-bg-panel-alt border-4 border-dashed border-border-strong">
+          <p className="font-data-mono text-data-mono text-text-muted uppercase tracking-widest">
+            Select a client, then a project, to see its feature requests.
+          </p>
+        </div>
+      ) : loading ? (
         <p className="text-text-muted">Loading...</p>
       ) : requests.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center bg-bg-panel-alt border-4 border-dashed border-border-strong">
           <p className="font-data-mono text-data-mono text-text-muted uppercase tracking-widest">
-            No feature requests yet.
+            No feature requests yet for this project.
           </p>
         </div>
       ) : (

@@ -1,20 +1,24 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_client
+from app.api.deps import get_owned_project, require_client
 from app.db.session import get_db
 from app.models.feature_request import FeatureRequest
-from app.models.user import User
+from app.models.project import Project
 from app.schemas.project_features import ProjectFeaturesOut
 
-router = APIRouter(prefix="/api/project-features", tags=["project-features"], dependencies=[Depends(require_client)])
+router = APIRouter(
+    prefix="/api/projects/{project_id}/project-features",
+    tags=["project-features"],
+    dependencies=[Depends(require_client)],
+)
 
 
 @router.get("", response_model=ProjectFeaturesOut)
-def get_project_features(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
+def get_project_features(project: Project = Depends(get_owned_project), db: Session = Depends(get_db)):
     features = (
         db.query(FeatureRequest)
-        .filter(FeatureRequest.client_id == current_user.id)
+        .filter(FeatureRequest.project_id == project.id)
         .order_by(FeatureRequest.created_at.desc())
         .all()
     )

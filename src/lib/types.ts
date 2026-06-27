@@ -15,6 +15,21 @@ export interface User {
   created_at: string;
 }
 
+export type ProjectStatus = "active" | "inactive";
+
+export interface Project {
+  id: number;
+  client_id: number;
+  name: string;
+  status: ProjectStatus;
+  created_at: string;
+}
+
+export interface ProjectListResponse {
+  projects: Project[];
+  default_project_id: number | null;
+}
+
 export type MeetingType = "online" | "offline";
 export type MeetingStatus = "requested" | "confirmed" | "reschedule_pending" | "denied" | "cancelled" | "completed";
 export type ProposedBy = "client" | "admin";
@@ -22,6 +37,7 @@ export type ProposedBy = "client" | "admin";
 export interface Meeting {
   id: number;
   client_id: number;
+  project_id: number;
   meeting_type: MeetingType;
   agenda: string;
   status: MeetingStatus;
@@ -33,11 +49,6 @@ export interface Meeting {
   pending_proposed_by: ProposedBy | null;
   denial_reason: string | null;
   created_at: string;
-}
-
-export interface MeetingAvailability {
-  accepts_online: boolean;
-  accepts_offline: boolean;
 }
 
 export interface BusyRange {
@@ -73,6 +84,7 @@ export interface TicketStatusHistory {
 export interface Ticket {
   id: number;
   client_id: number;
+  project_id: number;
   name: string;
   description: string;
   status: TicketStatus;
@@ -104,6 +116,7 @@ export type ChallengeStatus = "none" | "open" | "approved" | "denied";
 export interface FeatureRequest {
   id: number;
   client_id: number;
+  project_id: number;
   feature_id: string | null;
   name: string;
   description: string;
@@ -118,12 +131,9 @@ export interface FeatureRequest {
   accepted_terms: boolean;
   actual_hours_taken: number | null;
   agreement_date: string | null;
+  price: number | null;
   messages: FeatureRequestMessage[];
   created_at: string;
-}
-
-export interface AdminFeatureRequest extends FeatureRequest {
-  price: number | null;
 }
 
 export interface QuoteBreakdown {
@@ -140,6 +150,7 @@ export type DiscountType = "percentage" | "fixed_amount";
 export interface Discount {
   id: number;
   client_id: number;
+  project_id: number;
   name: string;
   discount_type: DiscountType;
   value: number;
@@ -162,6 +173,7 @@ export interface InvoiceLineItem {
 export interface Invoice {
   id: number;
   client_id: number;
+  project_id: number;
   status: InvoiceStatus;
   subtotal: number;
   discount_amount: number;
@@ -179,6 +191,7 @@ export type MaintenanceStatus = "pending" | "proof_submitted" | "approved" | "re
 export interface MaintenanceRecord {
   id: number;
   client_id: number;
+  project_id: number;
   cycle_year: number;
   due_date: string;
   amount: number;
@@ -193,6 +206,7 @@ export interface MaintenanceRecord {
 export interface InfrastructureCostEntry {
   id: number;
   client_id: number;
+  project_id: number;
   feature_request_id: number | null;
   module: string;
   description: string | null;

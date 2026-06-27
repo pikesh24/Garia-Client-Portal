@@ -30,6 +30,7 @@ class MeetingOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     meeting_type: MeetingType
     agenda: str
     status: MeetingStatus
@@ -74,18 +75,6 @@ class MeetingConfirmRequest(BaseModel):
         if not value.strip():
             raise ValueError("a meeting link is required to confirm")
         return value
-
-
-class MeetingAvailabilityOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    accepts_online: bool
-    accepts_offline: bool
-
-
-class MeetingAvailabilityUpdateRequest(BaseModel):
-    accepts_online: bool | None = None
-    accepts_offline: bool | None = None
 
 
 class BusyRangeOut(BaseModel):

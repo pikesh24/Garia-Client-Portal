@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_client
+from app.api.deps import get_owned_project, require_client
 from app.core.exceptions import BusinessRuleViolation, IrreversibleActionConflict
 from app.db.session import get_db
 from app.models.enums import ChallengeStatus, FeatureRequestStatus
 from app.models.feature_request import FeatureRequest, FeatureRequestMessage
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.feature_request import (
     BaseFeatureActivationRequest,
@@ -16,21 +17,25 @@ from app.schemas.feature_request import (
     FeatureRequestUpdateRequest,
 )
 
-router = APIRouter(prefix="/api/feature-requests", tags=["feature-requests"], dependencies=[Depends(require_client)])
+router = APIRouter(
+    prefix="/api/projects/{project_id}/feature-requests",
+    tags=["feature-requests"],
+    dependencies=[Depends(require_client)],
+)
 
 
-def _get_own_feature_request(feature_request_id: int, current_user: User, db: Session) -> FeatureRequest:
+def _get_own_feature_request(project_id: int, feature_request_id: int, db: Session) -> FeatureRequest:
     fr = db.get(FeatureRequest, feature_request_id)
-    if not fr or fr.client_id != current_user.id:
+    if not fr or fr.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feature request not found")
     return fr
 
 
 @router.get("", response_model=list[FeatureRequestOut])
-def list_my_feature_requests(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
+def list_my_feature_requests(project: Project = Depends(get_owned_project), db: Session = Depends(get_db)):
     return (
         db.query(FeatureRequest)
-        .filter(FeatureRequest.client_id == current_user.id, FeatureRequest.is_base_feature == False)  # noqa: E712
+        .filter(FeatureRequest.project_id == project.id, FeatureRequest.is_base_feature == False)  # noqa: E712
         .order_by(FeatureRequest.created_at.desc())
         .all()
     )
@@ -39,10 +44,12 @@ def list_my_feature_requests(current_user: User = Depends(require_client), db: S
 @router.post("", response_model=FeatureRequestOut, status_code=201)
 def create_feature_request(
     payload: FeatureRequestCreateRequest,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = FeatureRequest(client_id=current_user.id, name=payload.name, description=payload.description)
+    fr = FeatureRequest(
+        client_id=project.client_id, project_id=project.id, name=payload.name, description=payload.description
+    )
     db.add(fr)
     db.commit()
     db.refresh(fr)
@@ -53,11 +60,11 @@ def create_feature_request(
 def update_feature_request(
     feature_request_id: int,
     payload: FeatureRequestUpdateRequest,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
     """The client edits their own request's name/description and resubmits it for review."""
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     fr.name = payload.name
     fr.description = payload.description
     fr.status = FeatureRequestStatus.UNDER_REVIEW
@@ -68,9 +75,9 @@ def update_feature_request(
 
 @router.get("/{feature_request_id}/messages", response_model=list[FeatureRequestMessageOut])
 def list_messages(
-    feature_request_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
+    feature_request_id: int, project: Project = Depends(get_owned_project), db: Session = Depends(get_db)
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     return fr.messages
 
 
@@ -79,9 +86,10 @@ def create_message(
     feature_request_id: int,
     payload: FeatureRequestMessageCreateRequest,
     current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     message = FeatureRequestMessage(
         feature_request_id=fr.id, sender_id=current_user.id, sender_role=current_user.role, body=payload.body
     )
@@ -95,10 +103,10 @@ def create_message(
 def activate_base_feature(
     feature_request_id: int,
     payload: BaseFeatureActivationRequest,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     if not fr.is_base_feature:
         raise BusinessRuleViolation("This is not a base feature")
     if fr.base_feature_activated:
@@ -114,10 +122,10 @@ def activate_base_feature(
 @router.post("/{feature_request_id}/decline-base-feature", response_model=FeatureRequestOut)
 def decline_base_feature(
     feature_request_id: int,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     if not fr.is_base_feature:
         raise BusinessRuleViolation("This is not a base feature")
     if fr.base_feature_activated:
@@ -132,10 +140,10 @@ def decline_base_feature(
 @router.post("/{feature_request_id}/challenge", response_model=FeatureRequestOut)
 def open_challenge(
     feature_request_id: int,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     if not fr.is_base_feature:
         raise BusinessRuleViolation("Only base features can be challenged")
     if fr.base_feature_activated:
@@ -151,9 +159,9 @@ def open_challenge(
 
 @router.get("/{feature_request_id}/challenge-messages", response_model=list[FeatureRequestMessageOut])
 def list_challenge_messages(
-    feature_request_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
+    feature_request_id: int, project: Project = Depends(get_owned_project), db: Session = Depends(get_db)
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     return [m for m in fr.messages if m.is_challenge]
 
 
@@ -162,9 +170,10 @@ def create_challenge_message(
     feature_request_id: int,
     payload: FeatureRequestMessageCreateRequest,
     current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     if fr.challenge_status != ChallengeStatus.OPEN:
         raise BusinessRuleViolation("There is no open challenge for this feature")
     message = FeatureRequestMessage(
@@ -183,10 +192,10 @@ def create_challenge_message(
 @router.post("/{feature_request_id}/request-cancellation-review", response_model=FeatureRequestOut)
 def request_cancellation_review(
     feature_request_id: int,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
     if fr.is_base_feature and fr.base_feature_activated:
         raise IrreversibleActionConflict("This base feature has already been activated and cannot be cancelled")
     fr.status = FeatureRequestStatus.OUT_OF_SCOPE
@@ -198,22 +207,22 @@ def request_cancellation_review(
 @router.post("/{feature_request_id}/approve", response_model=FeatureRequestOut)
 def approve_feature_request(
     feature_request_id: int,
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
     from datetime import date
-    fr = _get_own_feature_request(feature_request_id, current_user, db)
-    
+    fr = _get_own_feature_request(project.id, feature_request_id, db)
+
     fr.accepted_terms = True
     fr.status = FeatureRequestStatus.APPROVED
-    
+
     if fr.is_base_feature:
         fr.base_feature_activated = True
         fr.added_by_client = True
-        
+
     if not fr.agreement_date:
         fr.agreement_date = date.today().isoformat()
-        
+
     db.commit()
     db.refresh(fr)
     return fr

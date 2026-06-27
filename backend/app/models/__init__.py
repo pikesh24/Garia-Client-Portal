@@ -7,6 +7,7 @@ from app.models.maintenance import InfrastructureCostEntry, MaintenanceRecord
 from app.models.meeting import Meeting
 from app.models.meeting_availability import MeetingAvailability
 from app.models.meeting_block import MeetingBlock
+from app.models.project import Project
 from app.models.ticket import SupportTicket, TicketAttachment, TicketStatusHistory
 from app.models.user import User
 
@@ -14,6 +15,7 @@ __all__ = [
     "Base",
     "User",
     "RefreshToken",
+    "Project",
     "Meeting",
     "MeetingAvailability",
     "MeetingBlock",

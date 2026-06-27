@@ -20,10 +20,10 @@ def compute_feature_price(
     )
 
 
-def get_active_discount(client_id: int, db: Session) -> Discount | None:
+def get_active_discount(project_id: int, db: Session) -> Discount | None:
     return (
         db.query(Discount)
-        .filter(Discount.client_id == client_id, Discount.is_active == True)  # noqa: E712
+        .filter(Discount.project_id == project_id, Discount.is_active == True)  # noqa: E712
         .first()
     )
 

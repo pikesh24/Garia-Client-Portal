@@ -72,3 +72,8 @@ class MaintenanceStatus(str, enum.Enum):
     PROOF_SUBMITTED = "proof_submitted"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class ProjectStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"

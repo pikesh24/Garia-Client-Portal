@@ -5,21 +5,24 @@ import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, ProjectFeatures } from "@/lib/types";
 import { Alert, Button, EmptyState, Modal, PageHeader, StatusBadge } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
+import { useProject } from "@/lib/project-context";
 
 function formatINR(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
 }
 
 export default function ProjectFeaturesPage() {
+  const { currentProject } = useProject();
   const [features, setFeatures] = useState<ProjectFeatures | null>(null);
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [challenging, setChallenging] = useState<FeatureRequest | null>(null);
 
   async function load() {
+    if (!currentProject) return;
     const [featureData, serviceData] = await Promise.all([
-      apiRequest<ProjectFeatures>("/api/project-features"),
-      apiRequest<InfrastructureCostEntry[]>("/api/maintenance/infrastructure-costs"),
+      apiRequest<ProjectFeatures>(`/api/projects/${currentProject.id}/project-features`),
+      apiRequest<InfrastructureCostEntry[]>(`/api/projects/${currentProject.id}/maintenance/infrastructure-costs`),
     ]);
     setFeatures(featureData);
     setServices(serviceData);
@@ -33,7 +36,7 @@ export default function ProjectFeaturesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [currentProject?.id]);
 
   async function approve(fr: FeatureRequest) {
     setError(null);
@@ -85,6 +88,9 @@ export default function ProjectFeaturesPage() {
                 ID: #{fr.id} {fr.feature_id ? `· ${fr.feature_id}` : ""}
               </span>
               <StatusBadge status={needsApproval ? "pending" : fr.status} />
+              {fr.is_base_feature && fr.challenge_status !== "none" && (
+                <StatusBadge status={fr.challenge_status} />
+              )}
             </div>
             <h4 className="font-headline-lg text-2xl font-black uppercase text-text-main leading-tight mb-2">
               {fr.name}
@@ -93,7 +99,7 @@ export default function ProjectFeaturesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-2 gap-4 bg-bg-panel-alt p-4 border-2 border-border-strong mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-bg-panel-alt p-4 border-2 border-border-strong mb-6">
           <div>
             <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Hours (F / B / P)</div>
             <div className="font-data-mono text-sm text-text-main font-bold">
@@ -103,6 +109,10 @@ export default function ProjectFeaturesPage() {
           <div>
             <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Agreement Date</div>
             <div className="font-data-mono text-sm text-text-main font-bold">{fr.agreement_date ?? "—"}</div>
+          </div>
+          <div>
+            <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Price</div>
+            <div className="font-data-mono text-sm text-coral-red font-bold">{fr.price != null ? formatINR(fr.price) : "—"}</div>
           </div>
         </div>
 
@@ -159,7 +169,7 @@ export default function ProjectFeaturesPage() {
     );
   }
 
-  if (!features) return <p className="text-text-muted">Loading...</p>;
+  if (!currentProject || !features) return <p className="text-text-muted">Loading...</p>;
 
   return (
     <div className="space-y-12">

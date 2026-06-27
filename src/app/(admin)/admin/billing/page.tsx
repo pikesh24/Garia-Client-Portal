@@ -1,9 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError, fileUrl } from "@/lib/api";
-import { AdminFeatureRequest, Discount, DiscountType, Invoice, User } from "@/lib/types";
+import { FeatureRequest, Discount, DiscountType, Invoice, User } from "@/lib/types";
 import { Alert, StatusBadge } from "@/components/ui";
+import { BrutalistSelect } from "@/components/BrutalistSelect";
+import { AdminProjectFilter, ProjectFilterValue, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 
 type Tab = "invoices" | "discounts";
 
@@ -19,54 +22,10 @@ function computeDiscountAmount(subtotal: number, discount: Discount | undefined)
   return Math.min(Math.round(discount.value * 100) / 100, subtotal);
 }
 
-function BrutalistSelect({ value, onChange, options, placeholder }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], placeholder: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const selected = options.find(o => String(o.value) === String(value));
-
-  return (
-    <div className="relative w-full" ref={ref}>
-      <div 
-        onClick={() => setOpen(!open)}
-        className={`w-full bg-bg-panel-alt border-4 border-border-strong p-4 font-bold text-lg cursor-pointer shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)] flex justify-between items-center transition-colors hover:border-text-main ${open ? "border-text-main" : ""}`}
-      >
-        <span className={value ? "text-text-main" : "text-text-muted"}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <span className={`material-symbols-outlined font-black transition-transform ${open ? "rotate-180" : ""}`}>
-          arrow_drop_down
-        </span>
-      </div>
-      {open && (
-        <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] z-50 max-h-64 overflow-y-auto custom-scrollbar flex flex-col">
-          {options.map(opt => (
-            <div 
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`p-4 font-bold cursor-pointer border-b-2 border-border-strong/30 last:border-b-0 hover:bg-text-main hover:text-white transition-colors ${String(value) === String(opt.value) ? "bg-text-main/10 text-text-main" : "text-text-main"}`}
-            >
-              {opt.label}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AdminBillingPage() {
-  const [tab, setTab] = useState<Tab>("invoices");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(searchParams.get("tab") === "discounts" ? "discounts" : "invoices");
+  const [filter, setFilter] = useAdminProjectFilter();
   return (
     <div className="space-y-12">
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 mb-8 border-b-4 border-border-strong pb-8">
@@ -103,16 +62,18 @@ export default function AdminBillingPage() {
         </button>
       </div>
 
+      <AdminProjectFilter value={filter} onChange={setFilter} />
+
       <div className="min-h-[500px]">
-        {tab === "invoices" ? <InvoicesTab /> : <DiscountsTab />}
+        {tab === "invoices" ? <InvoicesTab filter={filter} /> : <DiscountsTab filter={filter} />}
       </div>
     </div>
   );
 }
 
-function InvoicesTab() {
+function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
   const [clients, setClients] = useState<User[]>([]);
-  const [features, setFeatures] = useState<AdminFeatureRequest[]>([]);
+  const [features, setFeatures] = useState<FeatureRequest[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,11 +92,17 @@ function InvoicesTab() {
   const [editNotes, setEditNotes] = useState("");
 
   async function loadAll() {
+    const invoicesEndpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/billing/invoices`
+      : "/api/admin/billing/invoices";
+    const featuresEndpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/feature-requests?include_base_features=true`
+      : "/api/admin/feature-requests?include_base_features=true";
     const [c, f, d, i] = await Promise.all([
       apiRequest<User[]>("/api/admin/users"),
-      apiRequest<AdminFeatureRequest[]>("/api/admin/feature-requests?include_base_features=true"),
+      apiRequest<FeatureRequest[]>(featuresEndpoint),
       apiRequest<Discount[]>("/api/admin/discounts"),
-      apiRequest<Invoice[]>("/api/admin/billing/invoices"),
+      apiRequest<Invoice[]>(invoicesEndpoint),
     ]);
     setClients(c);
     setFeatures(f);
@@ -146,14 +113,24 @@ function InvoicesTab() {
   useEffect(() => {
     setLoading(true);
     loadAll().finally(() => setLoading(false));
-  }, []);
+  }, [filter.projectId]);
+
+  useEffect(() => {
+    if (filter.clientId) setClientId(filter.clientId);
+  }, [filter.clientId]);
 
   const selectedClient = clients.find((c) => String(c.id) === clientId);
   const activeDiscount = discounts.find((d) => String(d.client_id) === clientId && d.is_active);
 
-  const eligibleFeatures = features.filter(
-    (f) => String(f.client_id) === clientId && f.added_by_client && f.status === "approved"
-  );
+  const eligibleFeatures = filter.projectId
+    ? features.filter(
+        (f) =>
+          String(f.client_id) === clientId &&
+          String(f.project_id) === filter.projectId &&
+          f.added_by_client &&
+          f.status === "approved"
+      )
+    : [];
 
   const allSelected = eligibleFeatures.length > 0 && eligibleFeatures.every((f) => selectedFeatures.includes(f.id));
 
@@ -182,20 +159,19 @@ function InvoicesTab() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    if (!filter.projectId) {
+      setError("Select a project to bill.");
+      return;
+    }
     if (selectedFeatures.length === 0) {
       setError("Select at least one feature request to bill.");
       return;
     }
     setSubmitting(true);
     try {
-      await apiRequest("/api/admin/billing/invoices", {
+      await apiRequest(`/api/admin/projects/${filter.projectId}/billing/invoices`, {
         method: "POST",
-        body: {
-          client_id: Number(clientId),
-          feature_ids: selectedFeatures,
-          tax_amount: Number(taxAmount) || 0,
-          notes,
-        },
+        body: { feature_ids: selectedFeatures, tax_amount: Number(taxAmount) || 0, notes },
       });
       setSelectedFeatures([]);
       setNotes("");
@@ -274,17 +250,24 @@ function InvoicesTab() {
                 <label className="block font-label-caps text-xs font-black uppercase tracking-widest text-text-muted mb-2">
                   Target Client
                 </label>
-                <BrutalistSelect
-                  value={clientId}
-                  onChange={(val) => {
-                    setClientId(val);
-                    setSelectedFeatures([]);
-                    setError(null);
-                  }}
-                  placeholder="-- SELECT ACTIVE CLIENT --"
-                  options={clients.map(c => ({ value: String(c.id), label: `${c.full_name} (${c.email})` }))}
-                />
-                
+                {filter.clientId ? (
+                  <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
+                    {clients.find((c) => String(c.id) === filter.clientId)?.full_name ?? `#${filter.clientId}`}
+                    <span className="ml-2 font-data-mono text-[10px] uppercase text-text-muted">(from project filter above)</span>
+                  </div>
+                ) : (
+                  <BrutalistSelect
+                    value={clientId}
+                    onChange={(val) => {
+                      setClientId(val);
+                      setSelectedFeatures([]);
+                      setError(null);
+                    }}
+                    placeholder="-- SELECT ACTIVE CLIENT --"
+                    options={clients.map(c => ({ value: String(c.id), label: `${c.full_name} (${c.email})` }))}
+                  />
+                )}
+
                 {clientId && activeDiscount && (
                   <div className="mt-3 inline-block bg-accent/10 border-2 border-accent p-3">
                     <span className="font-data-mono text-[10px] uppercase font-bold text-accent tracking-widest block mb-1">
@@ -314,10 +297,16 @@ function InvoicesTab() {
                     )}
                   </div>
                   
-                  {eligibleFeatures.length === 0 ? (
+                  {!filter.projectId ? (
                     <div className="border-4 border-border-strong border-dashed p-6 text-center">
                       <p className="font-data-mono text-sm text-text-muted uppercase tracking-widest">
-                        No billable features available for this client.
+                        Select a project above to see its billable items.
+                      </p>
+                    </div>
+                  ) : eligibleFeatures.length === 0 ? (
+                    <div className="border-4 border-border-strong border-dashed p-6 text-center">
+                      <p className="font-data-mono text-sm text-text-muted uppercase tracking-widest">
+                        No billable features available for this project.
                       </p>
                     </div>
                   ) : (
@@ -412,7 +401,7 @@ function InvoicesTab() {
 
               <button
                 type="submit"
-                disabled={submitting || !clientId || selectedFeatures.length === 0}
+                disabled={submitting || !clientId || !filter.projectId || selectedFeatures.length === 0}
                 className="w-full block bg-coral-red text-white font-black text-xl uppercase py-5 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--text-main)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-[6px_6px_0px_0px_var(--text-main)] disabled:hover:translate-x-0 disabled:hover:translate-y-0"
               >
                 {submitting ? "PROCESSING..." : "GENERATE DRAFT INVOICE RECORD"}
@@ -580,21 +569,21 @@ function InvoicesTab() {
   );
 }
 
-function DiscountsTab() {
+function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
   const [clients, setClients] = useState<User[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [clientId, setClientId] = useState("");
   const [name, setName] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("percentage");
   const [value, setValue] = useState("");
   const [isActive, setIsActive] = useState(true);
-  
+
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState<DiscountType>("percentage");
@@ -602,9 +591,12 @@ function DiscountsTab() {
   const [editActive, setEditActive] = useState(true);
 
   async function loadAll() {
+    const discountsEndpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/discounts`
+      : "/api/admin/discounts";
     const [c, d] = await Promise.all([
       apiRequest<User[]>("/api/admin/users"),
-      apiRequest<Discount[]>("/api/admin/discounts"),
+      apiRequest<Discount[]>(discountsEndpoint),
     ]);
     setClients(c);
     setDiscounts(d);
@@ -613,7 +605,11 @@ function DiscountsTab() {
   useEffect(() => {
     setLoading(true);
     loadAll().finally(() => setLoading(false));
-  }, []);
+  }, [filter.projectId]);
+
+  useEffect(() => {
+    if (filter.clientId) setClientId(filter.clientId);
+  }, [filter.clientId]);
 
   const existingActiveForClient = discounts.find((d) => String(d.client_id) === clientId && d.is_active);
 
@@ -623,10 +619,17 @@ function DiscountsTab() {
     setMessage(null);
     setSubmitting(true);
     try {
-      await apiRequest("/api/admin/discounts", {
-        method: "POST",
-        body: { client_id: Number(clientId), name, discount_type: discountType, value: Number(value), is_active: isActive },
-      });
+      if (filter.projectId) {
+        await apiRequest(`/api/admin/projects/${filter.projectId}/discounts`, {
+          method: "POST",
+          body: { name, discount_type: discountType, value: Number(value), is_active: isActive },
+        });
+      } else {
+        await apiRequest("/api/admin/discounts", {
+          method: "POST",
+          body: { client_id: Number(clientId), name, discount_type: discountType, value: Number(value), is_active: isActive },
+        });
+      }
       setName("");
       setValue("");
       setMessage("Discount rule deployed successfully.");
@@ -691,12 +694,19 @@ function DiscountsTab() {
                 Target Customer Mapping
               </label>
               <div className="flex-1 relative">
-                <BrutalistSelect
-                  value={clientId}
-                  onChange={setClientId}
-                  placeholder="SELECT ACTIVE CLIENT PROFILE"
-                  options={clients.map(c => ({ value: String(c.id), label: c.full_name }))}
-                />
+                {filter.clientId ? (
+                  <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
+                    {clients.find((c) => String(c.id) === filter.clientId)?.full_name ?? `#${filter.clientId}`}
+                    <span className="ml-2 font-data-mono text-[10px] uppercase text-text-muted">(from project filter above)</span>
+                  </div>
+                ) : (
+                  <BrutalistSelect
+                    value={clientId}
+                    onChange={setClientId}
+                    placeholder="SELECT ACTIVE CLIENT PROFILE"
+                    options={clients.map(c => ({ value: String(c.id), label: c.full_name }))}
+                  />
+                )}
               </div>
             </div>
 

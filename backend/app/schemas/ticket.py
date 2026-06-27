@@ -29,6 +29,7 @@ class TicketOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     name: str
     description: str
     status: TicketStatus

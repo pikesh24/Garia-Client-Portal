@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
-import { BusyRange, Meeting, MeetingAvailability, MeetingBlock, MeetingType } from "@/lib/types";
+import { BusyRange, Meeting, MeetingBlock, MeetingType } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { useProject } from "@/lib/project-context";
 import { PageHeader } from "@/components/ui";
 import { MeetingCalendarView, MeetingActions, BookableConfig, TimeRange } from "@/components/MeetingCalendar";
 
 const MIN_HOURS_AHEAD = 36;
-const AVAILABILITY_POLL_MS = 15000;
 
 function minBookableInstant(): Date {
   return new Date(Date.now() + MIN_HOURS_AHEAD * 60 * 60 * 1000);
@@ -23,22 +23,18 @@ function toLocalDateParam(date: Date): string {
 
 export default function MeetingsPage() {
   const { user } = useAuth();
+  const { currentProject } = useProject();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [availability, setAvailability] = useState<MeetingAvailability>({ accepts_online: true, accepts_offline: true });
 
   const minInstant = useMemo(() => minBookableInstant(), []);
 
   async function load() {
-    const data = await apiRequest<Meeting[]>("/api/meetings");
+    if (!currentProject) return;
+    const data = await apiRequest<Meeting[]>(`/api/projects/${currentProject.id}/meetings`);
     setMeetings(data);
     setLoading(false);
-  }
-
-  async function loadAvailability() {
-    const data = await apiRequest<MeetingAvailability>("/api/meetings/availability");
-    setAvailability(data);
   }
 
   async function loadBlocks() {
@@ -49,10 +45,7 @@ export default function MeetingsPage() {
   useEffect(() => {
     load();
     loadBlocks();
-    loadAvailability();
-    const interval = setInterval(loadAvailability, AVAILABILITY_POLL_MS);
-    return () => clearInterval(interval);
-  }, []);
+  }, [currentProject?.id]);
 
   const fetchBusyRanges = async (date: Date, excludeMeetingId?: number): Promise<TimeRange[]> => {
     const params = new URLSearchParams({ date: toLocalDateParam(date) });
@@ -85,10 +78,11 @@ export default function MeetingsPage() {
 
   const bookable: BookableConfig = {
     minInstant,
-    allowOnline: availability.accepts_online,
-    allowOffline: availability.accepts_offline && !!user?.can_book_offline_meeting,
+    allowOnline: true,
+    allowOffline: !!user?.can_book_offline_meeting,
     onBook: async (start: Date, end: Date, meetingType: MeetingType, agenda: string) => {
-      await apiRequest("/api/meetings", {
+      if (!currentProject) return;
+      await apiRequest(`/api/projects/${currentProject.id}/meetings`, {
         method: "POST",
         body: {
           meeting_type: meetingType,
@@ -105,7 +99,7 @@ export default function MeetingsPage() {
     <div className="space-y-6">
       <PageHeader title="Meetings Calendar" />
 
-      {loading ? (
+      {loading || !currentProject ? (
         <p className="text-text-muted">Loading...</p>
       ) : (
         <MeetingCalendarView

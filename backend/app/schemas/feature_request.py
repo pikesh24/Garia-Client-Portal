@@ -57,6 +57,7 @@ class FeatureRequestOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     feature_id: str | None
     name: str
     description: str
@@ -76,7 +77,7 @@ class FeatureRequestOut(BaseModel):
 
 
 class FeatureRequestAdminOut(FeatureRequestOut):
-    """Admin-facing view of a feature request — adds the price, which clients never see."""
+    """Feature request view including the computed price."""
 
     price: float | None
 

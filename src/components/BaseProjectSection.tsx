@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api";
-import { AdminFeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, User } from "@/lib/types";
+import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, User } from "@/lib/types";
 import {
   Alert,
   Button,
@@ -47,8 +47,8 @@ function computeLivePrice(client: User, d: typeof emptyDraft): number {
   );
 }
 
-export function BaseProjectSection({ clientId, client }: { clientId: string; client: User }) {
-  const [features, setFeatures] = useState<AdminFeatureRequest[] | null>(null);
+export function BaseProjectSection({ projectId, client }: { projectId: string; client: User }) {
+  const [features, setFeatures] = useState<FeatureRequest[] | null>(null);
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState(emptyDraft);
@@ -56,12 +56,12 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<typeof emptyDraft | null>(null);
   const [newServiceByFeature, setNewServiceByFeature] = useState<Record<number, ServiceDraft>>({});
-  const [reviewingChallenge, setReviewingChallenge] = useState<AdminFeatureRequest | null>(null);
+  const [reviewingChallenge, setReviewingChallenge] = useState<FeatureRequest | null>(null);
 
   async function load() {
     const [featureData, serviceData] = await Promise.all([
-      apiRequest<AdminFeatureRequest[]>(`/api/admin/users/${clientId}/base-project`),
-      apiRequest<InfrastructureCostEntry[]>(`/api/admin/maintenance/infrastructure-costs?client_id=${clientId}`),
+      apiRequest<FeatureRequest[]>(`/api/admin/projects/${projectId}/base-project`),
+      apiRequest<InfrastructureCostEntry[]>(`/api/admin/maintenance/infrastructure-costs?client_id=${client.id}`),
     ]);
     setFeatures(featureData);
     setServices(serviceData);
@@ -69,7 +69,7 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
 
   useEffect(() => {
     load();
-  }, [clientId]);
+  }, [projectId]);
 
   function toPayload(d: typeof emptyDraft) {
     return {
@@ -88,7 +88,8 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
     await apiRequest("/api/admin/maintenance/infrastructure-costs", {
       method: "POST",
       body: {
-        client_id: Number(clientId),
+        client_id: client.id,
+        project_id: Number(projectId),
         feature_request_id: featureRequestId,
         module: service.name,
         description: service.description || null,
@@ -101,7 +102,7 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
     e.preventDefault();
     setError(null);
     try {
-      const fr = await apiRequest<AdminFeatureRequest>(`/api/admin/users/${clientId}/base-project`, {
+      const fr = await apiRequest<FeatureRequest>(`/api/admin/projects/${projectId}/base-project`, {
         method: "POST",
         body: toPayload(draft),
       });
@@ -139,7 +140,7 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
     }
   }
 
-  function startEdit(fr: AdminFeatureRequest) {
+  function startEdit(fr: FeatureRequest) {
     setEditingId(fr.id);
     setEditDraft({
       feature_id: fr.feature_id ?? "",
@@ -157,7 +158,7 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
     if (!editDraft) return;
     setError(null);
     try {
-      await apiRequest(`/api/admin/users/${clientId}/base-project/${id}`, {
+      await apiRequest(`/api/admin/projects/${projectId}/base-project/${id}`, {
         method: "PATCH",
         body: toPayload(editDraft),
       });
@@ -358,7 +359,6 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
                 <Label>Calculated Live Price (INR)</Label>
                 <div className="font-display-xl text-3xl font-black text-coral-red flex items-center gap-2">
                   {formatINR(computeLivePrice(client, draft))}
-                  <span className="material-symbols-outlined text-[18px]" title="Only visible to admins">lock</span>
                 </div>
               </div>
               <Button type="submit" className="w-full md:w-auto px-12 py-6">Add Feature to Project</Button>
@@ -405,7 +405,7 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
     </Card>
   );
 
-  function renderFeatureCard(fr: AdminFeatureRequest) {
+  function renderFeatureCard(fr: FeatureRequest) {
     const editing = editingId === fr.id;
     const featureServices = services.filter((s) => s.feature_request_id === fr.id);
     const newService = newServiceByFeature[fr.id] ?? emptyServiceDraft;
@@ -616,9 +616,8 @@ export function BaseProjectSection({ clientId, client }: { clientId: string; cli
                 </div>
               </div>
               <div>
-                <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1 flex items-center gap-1">
+                <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">
                   Calculated Price
-                  <span className="material-symbols-outlined text-[14px]" title="Only visible to admins">lock</span>
                 </div>
                 <div className="font-data-mono text-sm text-coral-red font-bold">{formatINR(fr.price)}</div>
               </div>
@@ -660,7 +659,7 @@ function ChallengeReviewModal({
   onClose,
   onChanged,
 }: {
-  featureRequest: AdminFeatureRequest;
+  featureRequest: FeatureRequest;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {

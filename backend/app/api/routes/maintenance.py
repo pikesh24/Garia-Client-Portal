@@ -1,28 +1,30 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_client
+from app.api.deps import get_owned_project, require_client
 from app.core.exceptions import BusinessRuleViolation
 from app.db.session import get_db
 from app.models.enums import MaintenanceStatus
 from app.models.maintenance import InfrastructureCostEntry, MaintenanceRecord
-from app.models.user import User
+from app.models.project import Project
 from app.schemas.maintenance import InfrastructureCostEntryOut, MaintenanceRecordOut
 from app.services.file_storage import save_upload
 
-router = APIRouter(prefix="/api/maintenance", tags=["maintenance"], dependencies=[Depends(require_client)])
+router = APIRouter(
+    prefix="/api/projects/{project_id}/maintenance", tags=["maintenance"], dependencies=[Depends(require_client)]
+)
 
 
 @router.get("/infrastructure-costs", response_model=list[InfrastructureCostEntryOut])
-def get_my_infra_costs(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
-    return db.query(InfrastructureCostEntry).filter(InfrastructureCostEntry.client_id == current_user.id).all()
+def get_my_infra_costs(project: Project = Depends(get_owned_project), db: Session = Depends(get_db)):
+    return db.query(InfrastructureCostEntry).filter(InfrastructureCostEntry.project_id == project.id).all()
 
 
 @router.get("/records", response_model=list[MaintenanceRecordOut])
-def get_my_maintenance_records(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
+def get_my_maintenance_records(project: Project = Depends(get_owned_project), db: Session = Depends(get_db)):
     return (
         db.query(MaintenanceRecord)
-        .filter(MaintenanceRecord.client_id == current_user.id)
+        .filter(MaintenanceRecord.project_id == project.id)
         .order_by(MaintenanceRecord.due_date.desc())
         .all()
     )
@@ -32,11 +34,11 @@ def get_my_maintenance_records(current_user: User = Depends(require_client), db:
 def submit_payment_proof(
     record_id: int,
     voucher: UploadFile = File(...),
-    current_user: User = Depends(require_client),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
     record = db.get(MaintenanceRecord, record_id)
-    if not record or record.client_id != current_user.id:
+    if not record or record.project_id != project.id:
         raise BusinessRuleViolation("Maintenance record not found")
     if record.status == MaintenanceStatus.APPROVED:
         raise BusinessRuleViolation("This maintenance cycle has already been approved")

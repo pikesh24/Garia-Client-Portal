@@ -12,6 +12,7 @@ class Meeting(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     meeting_type: Mapped[MeetingType] = mapped_column(Enum(MeetingType, name="meeting_type"), nullable=False)
     agenda: Mapped[str] = mapped_column(Text, nullable=False)
@@ -40,3 +41,4 @@ class Meeting(Base, TimestampMixin):
     cancelled_by_client: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()

@@ -11,6 +11,7 @@ from app.api.routes import (
     admin_feature_requests,
     admin_maintenance,
     admin_meetings,
+    admin_projects,
     admin_tickets,
     admin_users,
     auth,
@@ -21,6 +22,7 @@ from app.api.routes import (
     meetings,
     profile,
     project_features,
+    projects,
     tickets,
 )
 from app.core.config import settings
@@ -41,6 +43,7 @@ app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads"
 # Client-facing routers
 app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(projects.router)
 app.include_router(meetings.router)
 app.include_router(tickets.router)
 app.include_router(feature_requests.router)
@@ -51,13 +54,21 @@ app.include_router(maintenance.router)
 
 # Admin routers
 app.include_router(admin_users.router)
+app.include_router(admin_projects.router)
 app.include_router(admin_base_project.router)
 app.include_router(admin_meetings.router)
+app.include_router(admin_meetings.project_scoped_router)
 app.include_router(admin_tickets.router)
+app.include_router(admin_tickets.project_scoped_router)
 app.include_router(admin_feature_requests.router)
+app.include_router(admin_feature_requests.project_scoped_router)
 app.include_router(admin_discounts.router)
+app.include_router(admin_discounts.project_scoped_router)
 app.include_router(admin_billing.router)
+app.include_router(admin_billing.project_scoped_router)
 app.include_router(admin_maintenance.router)
+app.include_router(admin_maintenance.records_project_scoped_router)
+app.include_router(admin_maintenance.infra_costs_project_scoped_router)
 
 
 @app.get("/api/health")

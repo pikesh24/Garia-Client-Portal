@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.feature_request import FeatureRequest
 from app.models.user import User
-from app.schemas.user import ClientCreateRequest, ClientPatchRequest, ClientPutRequest, UserOut
+from app.schemas.user import ClientCreateRequest, ClientPatchRequest, UserOut
 from app.services.pricing import compute_feature_price
 
 _RATE_FIELDS = {"hourly_rate_frontend", "hourly_rate_backend", "hourly_rate_production"}
@@ -73,19 +73,6 @@ def patch_client(client_id: int, payload: ClientPatchRequest, db: Session = Depe
         setattr(client, field, value)
     if _RATE_FIELDS & updates.keys():
         _recompute_feature_prices(client, db)
-    db.commit()
-    db.refresh(client)
-    return client
-
-
-@router.put("/{client_id}", response_model=UserOut)
-def put_client(client_id: int, payload: ClientPutRequest, db: Session = Depends(get_db)):
-    client = _get_client_or_404(client_id, db)
-    if payload.email != client.email and db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in use")
-    for field, value in payload.model_dump().items():
-        setattr(client, field, value)
-    _recompute_feature_prices(client, db)
     db.commit()
     db.refresh(client)
     return client

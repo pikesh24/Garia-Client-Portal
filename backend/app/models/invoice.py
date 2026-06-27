@@ -12,6 +12,7 @@ class Invoice(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     status: Mapped[InvoiceStatus] = mapped_column(
         Enum(InvoiceStatus, name="invoice_status"), default=InvoiceStatus.DRAFT, nullable=False
@@ -26,6 +27,7 @@ class Invoice(Base, TimestampMixin):
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()
     line_items: Mapped[list["InvoiceLineItem"]] = relationship(
         back_populates="invoice", cascade="all, delete-orphan"
     )

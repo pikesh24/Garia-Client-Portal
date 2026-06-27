@@ -10,6 +10,7 @@ class SupportTicket(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -22,6 +23,7 @@ class SupportTicket(Base, TimestampMixin):
     resolution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()
     attachments: Mapped[list["TicketAttachment"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan"
     )

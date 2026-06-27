@@ -10,6 +10,7 @@ class Discount(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     discount_type: Mapped[DiscountType] = mapped_column(Enum(DiscountType, name="discount_type"), nullable=False)
@@ -17,3 +18,4 @@ class Discount(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()

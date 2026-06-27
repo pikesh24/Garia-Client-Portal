@@ -1,60 +1,17 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { apiRequest, ApiError, fileUrl } from "@/lib/api";
-import { AdminFeatureRequest, InfrastructureCostEntry, MaintenanceRecord, User } from "@/lib/types";
+import { FeatureRequest, InfrastructureCostEntry, MaintenanceRecord, User } from "@/lib/types";
 import { Alert, StatusBadge } from "@/components/ui";
+import { BrutalistSelect } from "@/components/BrutalistSelect";
+import { AdminProjectFilter, ProjectFilterValue, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 
 type Tab = "costs" | "compliance";
 
-function BrutalistSelect({ value, onChange, options, placeholder }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], placeholder: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const selected = options.find(o => String(o.value) === String(value));
-
-  return (
-    <div className="relative w-full" ref={ref}>
-      <div 
-        onClick={() => setOpen(!open)}
-        className={`w-full bg-bg-panel-alt border-4 border-border-strong p-4 font-bold text-lg cursor-pointer shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)] flex justify-between items-center transition-colors hover:border-text-main ${open ? "border-text-main" : ""}`}
-      >
-        <span className={value ? "text-text-main" : "text-text-muted"}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <span className={`material-symbols-outlined font-black transition-transform ${open ? "rotate-180" : ""}`}>
-          arrow_drop_down
-        </span>
-      </div>
-      {open && (
-        <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] z-50 max-h-64 overflow-y-auto custom-scrollbar flex flex-col">
-          {options.map(opt => (
-            <div 
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`p-4 font-bold cursor-pointer border-b-2 border-border-strong/30 last:border-b-0 hover:bg-text-main hover:text-white transition-colors ${String(value) === String(opt.value) ? "bg-text-main/10 text-text-main" : "text-text-main"}`}
-            >
-              {opt.label}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AdminMaintenancePage() {
   const [tab, setTab] = useState<Tab>("costs");
+  const [filter, setFilter] = useAdminProjectFilter();
   return (
     <div className="space-y-12">
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 mb-8 border-b-4 border-border-strong pb-8">
@@ -91,19 +48,21 @@ export default function AdminMaintenancePage() {
         </button>
       </div>
 
+      <AdminProjectFilter value={filter} onChange={setFilter} />
+
       <div className="min-h-[500px]">
-        {tab === "costs" ? <CostsTab /> : <ComplianceTab />}
+        {tab === "costs" ? <CostsTab filter={filter} /> : <ComplianceTab filter={filter} />}
       </div>
     </div>
   );
 }
 
-function CostsTab() {
+function CostsTab({ filter }: { filter: ProjectFilterValue }) {
   const [clients, setClients] = useState<User[]>([]);
-  const [features, setFeatures] = useState<AdminFeatureRequest[]>([]);
+  const [features, setFeatures] = useState<FeatureRequest[]>([]);
   const [costs, setCosts] = useState<InfrastructureCostEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [clientId, setClientId] = useState("");
   const [featureId, setFeatureId] = useState("");
   const [module, setModule] = useState("");
@@ -113,10 +72,13 @@ function CostsTab() {
   const [submitting, setSubmitting] = useState(false);
 
   async function loadAll() {
+    const costsEndpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/maintenance/infrastructure-costs`
+      : "/api/admin/maintenance/infrastructure-costs";
     const [c, f, costData] = await Promise.all([
       apiRequest<User[]>("/api/admin/users"),
-      apiRequest<AdminFeatureRequest[]>("/api/admin/feature-requests"),
-      apiRequest<InfrastructureCostEntry[]>("/api/admin/maintenance/infrastructure-costs"),
+      apiRequest<FeatureRequest[]>("/api/admin/feature-requests"),
+      apiRequest<InfrastructureCostEntry[]>(costsEndpoint),
     ]);
     setClients(c);
     setFeatures(f);
@@ -126,7 +88,11 @@ function CostsTab() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [filter.projectId]);
+
+  useEffect(() => {
+    if (filter.clientId) setClientId(filter.clientId);
+  }, [filter.clientId]);
 
   async function deployCost(e: React.FormEvent) {
     e.preventDefault();
@@ -137,17 +103,30 @@ function CostsTab() {
     setSubmitting(true);
     setError(null);
     try {
-      await apiRequest("/api/admin/maintenance/infrastructure-costs", {
-        method: "POST",
-        body: {
-          client_id: Number(clientId),
-          feature_request_id: featureId ? Number(featureId) : null,
-          module,
-          billing_type: billingType,
-          monthly_overhead_price: Number(overhead),
-          description: null
-        }
-      });
+      if (filter.projectId) {
+        await apiRequest(`/api/admin/projects/${filter.projectId}/maintenance/infrastructure-costs`, {
+          method: "POST",
+          body: {
+            feature_request_id: featureId ? Number(featureId) : null,
+            module,
+            billing_type: billingType,
+            monthly_overhead_price: Number(overhead),
+            description: null
+          }
+        });
+      } else {
+        await apiRequest("/api/admin/maintenance/infrastructure-costs", {
+          method: "POST",
+          body: {
+            client_id: Number(clientId),
+            feature_request_id: featureId ? Number(featureId) : null,
+            module,
+            billing_type: billingType,
+            monthly_overhead_price: Number(overhead),
+            description: null
+          }
+        });
+      }
       setModule("");
       setBillingType("");
       setOverhead("");
@@ -189,14 +168,21 @@ function CostsTab() {
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Target Environment Mapping
               </label>
-              <BrutalistSelect
-                value={clientId}
-                onChange={setClientId}
-                placeholder="-- SELECT ACTIVE CLIENT --"
-                options={clientOptions}
-              />
+              {filter.clientId ? (
+                <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
+                  {clients.find((c) => String(c.id) === filter.clientId)?.full_name ?? `#${filter.clientId}`}
+                  <span className="ml-2 font-data-mono text-[10px] uppercase text-text-muted">(from project filter above)</span>
+                </div>
+              ) : (
+                <BrutalistSelect
+                  value={clientId}
+                  onChange={setClientId}
+                  placeholder="-- SELECT ACTIVE CLIENT --"
+                  options={clientOptions}
+                />
+              )}
             </div>
-            
+
             <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Linked Feature Mapping (Optional)
@@ -338,7 +324,7 @@ function CostsTab() {
   );
 }
 
-function ComplianceTab() {
+function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   const [clients, setClients] = useState<User[]>([]);
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [infraCosts, setInfraCosts] = useState<InfrastructureCostEntry[]>([]);
@@ -355,9 +341,12 @@ function ComplianceTab() {
   const [rejectionReason, setRejectionReason] = useState("");
 
   async function loadAll() {
+    const recordsEndpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/maintenance/records`
+      : "/api/admin/maintenance/records";
     const [c, r, ic] = await Promise.all([
       apiRequest<User[]>("/api/admin/users"),
-      apiRequest<MaintenanceRecord[]>("/api/admin/maintenance/records"),
+      apiRequest<MaintenanceRecord[]>(recordsEndpoint),
       apiRequest<InfrastructureCostEntry[]>("/api/admin/maintenance/infrastructure-costs"),
     ]);
     setClients(c);
@@ -368,7 +357,11 @@ function ComplianceTab() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [filter.projectId]);
+
+  useEffect(() => {
+    if (filter.clientId) setClientId(filter.clientId);
+  }, [filter.clientId]);
 
   const selectedClient = clients.find((c) => c.id === Number(clientId));
   const clientInfraCosts = infraCosts.filter((c) => c.client_id === Number(clientId));
@@ -395,15 +388,26 @@ function ComplianceTab() {
       return;
     }
     try {
-      await apiRequest("/api/admin/maintenance/records", {
-        method: "POST",
-        body: {
-          client_id: Number(clientId),
-          cycle_year: Number(cycleYear),
-          due_date: dueDate,
-          amount: Number(amount),
-        }
-      });
+      if (filter.projectId) {
+        await apiRequest(`/api/admin/projects/${filter.projectId}/maintenance/records`, {
+          method: "POST",
+          body: {
+            cycle_year: Number(cycleYear),
+            due_date: dueDate,
+            amount: Number(amount),
+          }
+        });
+      } else {
+        await apiRequest("/api/admin/maintenance/records", {
+          method: "POST",
+          body: {
+            client_id: Number(clientId),
+            cycle_year: Number(cycleYear),
+            due_date: dueDate,
+            amount: Number(amount),
+          }
+        });
+      }
       setClientId("");
       setDueDate("");
       setAmount("");
@@ -460,14 +464,21 @@ function ComplianceTab() {
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Target Environment Mapping
               </label>
-              <BrutalistSelect
-                value={clientId}
-                onChange={setClientId}
-                placeholder="-- SELECT ACTIVE CLIENT --"
-                options={clientOptions}
-              />
+              {filter.clientId ? (
+                <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
+                  {clients.find((c) => String(c.id) === filter.clientId)?.full_name ?? `#${filter.clientId}`}
+                  <span className="ml-2 font-data-mono text-[10px] uppercase text-text-muted">(from project filter above)</span>
+                </div>
+              ) : (
+                <BrutalistSelect
+                  value={clientId}
+                  onChange={setClientId}
+                  placeholder="-- SELECT ACTIVE CLIENT --"
+                  options={clientOptions}
+                />
+              )}
             </div>
-            
+
             <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Cycle Year Designator

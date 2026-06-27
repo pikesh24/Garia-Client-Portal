@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiRequest, ApiError, getAccessToken } from "@/lib/api";
 import { FeatureRequest, InfrastructureCostEntry, MaintenanceRecord } from "@/lib/types";
 import { Alert, StatusBadge, Button } from "@/components/ui";
+import { useProject } from "@/lib/project-context";
 
 type Tab = "costs" | "compliance";
 
 export default function MaintenancePage() {
+  const { currentProject } = useProject();
   const [tab, setTab] = useState<Tab>("costs");
   const [infraCosts, setInfraCosts] = useState<InfrastructureCostEntry[]>([]);
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
@@ -15,16 +17,17 @@ export default function MaintenancePage() {
   const [loadedAt, setLoadedAt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
-  
+
   // Custom file selection state
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File | null>>({});
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
 
   async function load() {
+    if (!currentProject) return;
     const [costs, recs, feats] = await Promise.all([
-      apiRequest<InfrastructureCostEntry[]>("/api/maintenance/infrastructure-costs"),
-      apiRequest<MaintenanceRecord[]>("/api/maintenance/records"),
-      apiRequest<FeatureRequest[]>("/api/feature-requests"),
+      apiRequest<InfrastructureCostEntry[]>(`/api/projects/${currentProject.id}/maintenance/infrastructure-costs`),
+      apiRequest<MaintenanceRecord[]>(`/api/projects/${currentProject.id}/maintenance/records`),
+      apiRequest<FeatureRequest[]>(`/api/projects/${currentProject.id}/feature-requests`),
     ]);
     setInfraCosts(costs);
     setRecords(recs);
@@ -34,7 +37,7 @@ export default function MaintenancePage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [currentProject?.id]);
 
   const handleFileChange = (recordId: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
@@ -42,6 +45,7 @@ export default function MaintenancePage() {
   };
 
   async function submitProof(recordId: number) {
+    if (!currentProject) return;
     const file = selectedFiles[recordId];
     if (!file) {
       setError("NO_FILE_DETECTED: Select a transaction voucher file before transmitting.");
@@ -52,7 +56,7 @@ export default function MaintenancePage() {
     const form = new FormData();
     form.append("voucher", file);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/maintenance/records/${recordId}/submit-proof`, {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${currentProject.id}/maintenance/records/${recordId}/submit-proof`, {
         method: "POST",
         headers: { Authorization: `Bearer ${getAccessToken()}` },
         body: form,

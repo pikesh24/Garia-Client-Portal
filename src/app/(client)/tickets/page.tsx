@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiRequest, ApiError, fileUrl, getAccessToken } from "@/lib/api";
 import { Ticket } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Label, PageHeader, StatusBadge, Textarea, Input } from "@/components/ui";
+import { useProject } from "@/lib/project-context";
 
 function priorityBadgeColor(priority: string) {
   switch (priority) {
@@ -15,21 +16,23 @@ function priorityBadgeColor(priority: string) {
 }
 
 export default function TicketsPage() {
+  const { currentProject } = useProject();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [hasFile, setHasFile] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const data = await apiRequest<Ticket[]>("/api/tickets");
+    if (!currentProject) return;
+    const data = await apiRequest<Ticket[]>(`/api/projects/${currentProject.id}/tickets`);
     setTickets(data);
     setLoading(false);
     if (selected) {
@@ -40,7 +43,7 @@ export default function TicketsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [currentProject?.id]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -68,6 +71,7 @@ export default function TicketsPage() {
   async function fileTicket(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!currentProject) return;
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
       setError("An attachment is required to file an incident ticket");
@@ -78,7 +82,7 @@ export default function TicketsPage() {
     form.append("description", description);
     form.append("file_upload", file);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/tickets`, {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${currentProject.id}/tickets`, {
         method: "POST",
         headers: { Authorization: `Bearer ${getAccessToken()}` },
         body: form,

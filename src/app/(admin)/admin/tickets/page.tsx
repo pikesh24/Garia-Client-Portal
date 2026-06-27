@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL, apiRequest, ApiError, fileUrl, getAccessToken } from "@/lib/api";
 import { Ticket, TicketStatus } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Label, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
+import { AdminProjectFilter, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 
 function priorityBadgeColor(priority: string) {
   switch (priority) {
@@ -15,28 +16,31 @@ function priorityBadgeColor(priority: string) {
 }
 
 export default function AdminTicketsPage() {
+  const [filter, setFilter] = useAdminProjectFilter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket | null>(null);
-  
+
   const [resolutionText, setResolutionText] = useState("");
   const [hasFile, setHasFile] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const proofInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const data = await apiRequest<Ticket[]>("/api/admin/tickets");
+    const endpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/tickets`
+      : "/api/admin/tickets";
+    const data = await apiRequest<Ticket[]>(endpoint);
     setTickets(data);
-    if (selected) {
-      setSelected(data.find((t) => t.id === selected.id) ?? null);
-    }
+    setSelected((prev) => (prev ? data.find((t) => t.id === prev.id) ?? null : null));
   }
 
   useEffect(() => {
     load();
-  }, []);
+    setSelected(null);
+  }, [filter.projectId]);
 
   async function updatePriority(priority: string) {
     if (!selected) return;
@@ -125,7 +129,9 @@ export default function AdminTicketsPage() {
   return (
     <div className="space-y-12">
       <PageHeader title="Support Ticket Operations" />
-      
+
+      <AdminProjectFilter value={filter} onChange={setFilter} />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Ticket Directory */}
         <div className="lg:col-span-4 space-y-4">

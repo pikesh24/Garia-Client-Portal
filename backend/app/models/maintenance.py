@@ -17,6 +17,7 @@ class MaintenanceRecord(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     cycle_year: Mapped[int] = mapped_column(Integer, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -31,6 +32,7 @@ class MaintenanceRecord(Base, TimestampMixin):
     penalty_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()
 
 
 class InfrastructureCostEntry(Base, TimestampMixin):
@@ -41,6 +43,7 @@ class InfrastructureCostEntry(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
     feature_request_id: Mapped[int | None] = mapped_column(ForeignKey("feature_requests.id"), nullable=True)
 
     module: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -49,4 +52,5 @@ class InfrastructureCostEntry(Base, TimestampMixin):
     monthly_overhead_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     client: Mapped["User"] = relationship()
+    project: Mapped["Project"] = relationship()
     feature_request: Mapped["FeatureRequest | None"] = relationship()

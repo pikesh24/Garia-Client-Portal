@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
-import { BusyRange, Meeting, MeetingAvailability, MeetingBlock } from "@/lib/types";
-import { Button, Card, CardBody, CardHeader, PageHeader, StatusBadge, Toggle } from "@/components/ui";
+import { BusyRange, Meeting, MeetingBlock } from "@/lib/types";
+import { Button, Card, CardBody, CardHeader, PageHeader, StatusBadge } from "@/components/ui";
 import { BlockTimeModal, MeetingActions, MeetingDetailsModal, TimeRange, meetingDisplayRange, formatTimeFn } from "@/components/MeetingCalendar";
-
-const AVAILABILITY_POLL_MS = 15000;
+import { AdminProjectFilter, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 
 function toLocalDateParam(date: Date): string {
   const y = date.getFullYear();
@@ -16,24 +15,21 @@ function toLocalDateParam(date: Date): string {
 }
 
 export default function AdminMeetingsPage() {
+  const [filter, setFilter] = useAdminProjectFilter();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [availability, setAvailability] = useState<MeetingAvailability>({ accepts_online: true, accepts_offline: true });
-  const [savingAvailability, setSavingAvailability] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
   async function load() {
-    const data = await apiRequest<Meeting[]>("/api/admin/meetings");
+    const endpoint = filter.projectId
+      ? `/api/admin/projects/${filter.projectId}/meetings`
+      : "/api/admin/meetings";
+    const data = await apiRequest<Meeting[]>(endpoint);
     setMeetings(data);
     setLoading(false);
-  }
-
-  async function loadAvailability() {
-    const data = await apiRequest<MeetingAvailability>("/api/admin/meetings/availability");
-    setAvailability(data);
   }
 
   async function loadBlocks() {
@@ -43,24 +39,11 @@ export default function AdminMeetingsPage() {
 
   useEffect(() => {
     load();
-    loadBlocks();
-    loadAvailability();
-    const interval = setInterval(loadAvailability, AVAILABILITY_POLL_MS);
-    return () => clearInterval(interval);
-  }, []);
+  }, [filter.projectId]);
 
-  async function updateAvailability(patch: Partial<MeetingAvailability>) {
-    setSavingAvailability(true);
-    try {
-      const data = await apiRequest<MeetingAvailability>("/api/admin/meetings/availability", {
-        method: "PATCH",
-        body: patch,
-      });
-      setAvailability(data);
-    } finally {
-      setSavingAvailability(false);
-    }
-  }
+  useEffect(() => {
+    loadBlocks();
+  }, []);
 
   async function deleteBlock(id: number) {
     await apiRequest(`/api/admin/meetings/blocks/${id}`, { method: "DELETE" });
@@ -103,28 +86,9 @@ export default function AdminMeetingsPage() {
     <div className="space-y-6">
       <PageHeader title="Unified Meetings Calendar" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>Meeting Availability</CardHeader>
-          <CardBody>
-            <div className="flex flex-col gap-4">
-              <Toggle
-                checked={availability.accepts_online}
-                onChange={(v) => updateAvailability({ accepts_online: v })}
-                label="Accepting Online Meetings"
-                disabled={savingAvailability}
-              />
-              <Toggle
-                checked={availability.accepts_offline}
-                onChange={(v) => updateAvailability({ accepts_offline: v })}
-                label="Accepting Offline Meetings"
-                disabled={savingAvailability}
-              />
-            </div>
-            <p className="mt-4 text-[10px] uppercase font-bold tracking-widest text-text-muted">Clients see this in real time when booking a new appointment.</p>
-          </CardBody>
-        </Card>
+      <AdminProjectFilter value={filter} onChange={setFilter} />
 
+      <div className="grid grid-cols-1 gap-6">
         <Card className="flex flex-col">
           <CardHeader>Blocked Time Management</CardHeader>
           <CardBody className="flex flex-col flex-1">

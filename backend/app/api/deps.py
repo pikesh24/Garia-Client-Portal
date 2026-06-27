@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.enums import UserRole
+from app.models.project import Project
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -40,3 +41,12 @@ def require_client(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.CLIENT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Client access required")
     return user
+
+
+def get_owned_project(
+    project_id: int, current_user: User = Depends(require_client), db: Session = Depends(get_db)
+) -> Project:
+    project = db.get(Project, project_id)
+    if not project or project.client_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project

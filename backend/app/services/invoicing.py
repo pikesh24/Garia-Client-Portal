@@ -6,23 +6,26 @@ from app.core.config import settings
 from app.models.enums import FeatureRequestStatus
 from app.models.feature_request import FeatureRequest
 from app.models.invoice import Invoice, InvoiceLineItem
+from app.models.project import Project
 from app.models.user import User
 from app.services.pricing import apply_discount, get_active_discount
 
 
-def build_draft_invoice(client: User, feature_ids: list[int], tax_amount: float, notes: str | None, db: Session) -> Invoice:
+def build_draft_invoice(
+    client: User, project: Project, feature_ids: list[int], tax_amount: float, notes: str | None, db: Session
+) -> Invoice:
     eligible_features = (
         db.query(FeatureRequest)
         .filter(
             FeatureRequest.id.in_(feature_ids),
-            FeatureRequest.client_id == client.id,
+            FeatureRequest.project_id == project.id,
             FeatureRequest.status == FeatureRequestStatus.APPROVED,
             FeatureRequest.added_by_client == True,  # noqa: E712
         )
         .all()
     )
 
-    invoice = Invoice(client_id=client.id, tax_amount=tax_amount, notes=notes)
+    invoice = Invoice(client_id=client.id, project_id=project.id, tax_amount=tax_amount, notes=notes)
     db.add(invoice)
     db.flush()
 
@@ -51,7 +54,7 @@ def build_draft_invoice(client: User, feature_ids: list[int], tax_amount: float,
         )
 
     subtotal = round(subtotal, 2)
-    discount = get_active_discount(client.id, db)
+    discount = get_active_discount(project.id, db)
     discount_amount = apply_discount(subtotal, discount)
     total = round(subtotal - discount_amount + tax_amount, 2)
 

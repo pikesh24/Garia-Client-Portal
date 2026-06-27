@@ -13,6 +13,16 @@ class DiscountCreateRequest(BaseModel):
     is_active: bool = True
 
 
+class ProjectDiscountCreateRequest(BaseModel):
+    """Same as DiscountCreateRequest but without client_id -- the client is derived from the
+    project on the path (a project has exactly one client)."""
+
+    name: str
+    discount_type: DiscountType
+    value: float
+    is_active: bool = True
+
+
 class DiscountUpdateRequest(BaseModel):
     name: str
     discount_type: DiscountType
@@ -25,6 +35,7 @@ class DiscountOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     name: str
     discount_type: DiscountType
     value: float

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useProject } from "@/lib/project-context";
 
 interface NavLink {
   href: string;
@@ -28,6 +30,46 @@ const adminLinks: NavLink[] = [
   { href: "/admin/maintenance", label: "Maintenance", icon: "settings" },
 ];
 
+function ProjectSwitcher() {
+  const { projects, currentProject, setCurrentProjectId } = useProject();
+  const [open, setOpen] = useState(false);
+
+  if (projects.length === 0) return null;
+
+  return (
+    <div className="relative mb-8">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 border-2 border-border-strong bg-bg-base px-4 py-3 font-label-caps text-label-caps uppercase tracking-[0.1em] font-bold text-text-main shadow-[3px_3px_0px_0px_var(--border-strong)] transition-all hover:-translate-x-px hover:-translate-y-px hover:shadow-[4px_4px_0px_0px_var(--border-strong)]"
+      >
+        <span className="truncate">{currentProject?.name ?? "Select Project"}</span>
+        <span className="material-symbols-outlined text-[16px]" data-icon="arrow_drop_down">arrow_drop_down</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-full bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] z-50">
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => {
+                setCurrentProjectId(p.id);
+                setOpen(false);
+              }}
+              className={
+                p.id === currentProject?.id
+                  ? "block w-full px-5 py-3 text-left font-label-caps text-label-caps uppercase tracking-[0.1em] bg-coral-red text-white"
+                  : "block w-full px-5 py-3 text-left font-label-caps text-label-caps uppercase tracking-[0.1em] text-text-muted hover:bg-border-subtle hover:text-text-main transition-colors"
+              }
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({ variant }: { variant: "client" | "admin" }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -38,6 +80,12 @@ export function Sidebar({ variant }: { variant: "client" | "admin" }) {
       <div className="px-gutter mb-12">
         <h1 className="font-display-xl text-headline-lg font-black text-coral-red tracking-tighter uppercase break-words leading-none mb-2">GARIA<br/>SOLUTIONS</h1>
       </div>
+
+      {variant === "client" && (
+        <div className="px-gutter">
+          <ProjectSwitcher />
+        </div>
+      )}
 
       <div className="flex-1 px-gutter space-y-4 overflow-y-auto">
         {links.map((link) => {

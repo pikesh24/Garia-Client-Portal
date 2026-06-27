@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage } from "@/lib/types";
+import { useProject } from "@/lib/project-context";
 import {
   Alert,
   Button,
@@ -19,6 +20,7 @@ import {
 import { ChatDiscussion } from "@/components/ChatDiscussion";
 
 export default function FeatureRequestsPage() {
+  const { currentProject } = useProject();
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +33,9 @@ export default function FeatureRequestsPage() {
   const [selected, setSelected] = useState<FeatureRequest | null>(null);
 
   async function load() {
+    if (!currentProject) return;
     try {
-      const data = await apiRequest<FeatureRequest[]>("/api/feature-requests");
+      const data = await apiRequest<FeatureRequest[]>(`/api/projects/${currentProject.id}/feature-requests`);
       setRequests(data);
       if (selected) setSelected(data.find((f) => f.id === selected.id) ?? null);
     } catch (err) {
@@ -44,13 +47,14 @@ export default function FeatureRequestsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [currentProject?.id]);
 
   async function createRequest(e: React.FormEvent) {
     e.preventDefault();
+    if (!currentProject) return;
     setCreateError(null);
     try {
-      await apiRequest("/api/feature-requests", { method: "POST", body: { name, description } });
+      await apiRequest(`/api/projects/${currentProject.id}/feature-requests`, { method: "POST", body: { name, description } });
       setName("");
       setDescription("");
       setShowCreate(false);

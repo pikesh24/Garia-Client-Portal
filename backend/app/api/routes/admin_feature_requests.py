@@ -6,8 +6,10 @@ from app.core.exceptions import BusinessRuleViolation
 from app.db.session import get_db
 from app.models.enums import ChallengeStatus, FeatureRequestStatus
 from app.models.feature_request import FeatureRequest, FeatureRequestMessage
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.feature_request import (
+    AdminBaseFeatureCreateRequest,
     ChallengeDecisionRequest,
     CompleteFeatureRequest,
     FeatureRequestAdminOut,
@@ -16,10 +18,24 @@ from app.schemas.feature_request import (
     FeatureRequestStatusUpdateRequest,
 )
 from app.services.email import notify_feature_request_event
+from app.services.pricing import compute_feature_price
 
 router = APIRouter(
     prefix="/api/admin/feature-requests", tags=["admin-feature-requests"], dependencies=[Depends(require_admin)]
 )
+
+project_scoped_router = APIRouter(
+    prefix="/api/admin/projects/{project_id}/feature-requests",
+    tags=["admin-feature-requests"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+def _get_project_or_404(project_id: int, db: Session) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
 
 
 @router.get("", response_model=list[FeatureRequestAdminOut])
@@ -31,6 +47,47 @@ def list_all_feature_requests(include_base_features: bool = False, db: Session =
     if not include_base_features:
         query = query.filter(FeatureRequest.is_base_feature.is_(False))
     return query.order_by(FeatureRequest.created_at.desc()).all()
+
+
+@project_scoped_router.get("", response_model=list[FeatureRequestAdminOut])
+def list_project_feature_requests(
+    project_id: int, include_base_features: bool = False, db: Session = Depends(get_db)
+):
+    _get_project_or_404(project_id, db)
+    query = db.query(FeatureRequest).filter(FeatureRequest.project_id == project_id)
+    if not include_base_features:
+        query = query.filter(FeatureRequest.is_base_feature.is_(False))
+    return query.order_by(FeatureRequest.created_at.desc()).all()
+
+
+@project_scoped_router.post("", response_model=FeatureRequestAdminOut, status_code=status.HTTP_201_CREATED)
+def create_project_feature_request(
+    project_id: int, payload: AdminBaseFeatureCreateRequest, db: Session = Depends(get_db)
+):
+    project = _get_project_or_404(project_id, db)
+    fr = FeatureRequest(
+        client_id=project.client_id,
+        project_id=project.id,
+        feature_id=payload.feature_id,
+        name=payload.name,
+        description=payload.description,
+        is_base_feature=payload.is_base_feature,
+        quoted_frontend_hours=payload.quoted_frontend_hours,
+        quoted_backend_hours=payload.quoted_backend_hours,
+        quoted_production_hours=payload.quoted_production_hours,
+        price=compute_feature_price(
+            project.client,
+            payload.quoted_frontend_hours,
+            payload.quoted_backend_hours,
+            payload.quoted_production_hours,
+        ),
+        agreement_date=payload.agreement_date,
+        added_by_client=not payload.is_base_feature,
+    )
+    db.add(fr)
+    db.commit()
+    db.refresh(fr)
+    return fr
 
 
 def _get_fr_or_404(feature_request_id: int, db: Session) -> FeatureRequest:

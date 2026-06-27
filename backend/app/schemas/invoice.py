@@ -12,6 +12,15 @@ class InvoiceCreateRequest(BaseModel):
     notes: str | None = None
 
 
+class ProjectInvoiceCreateRequest(BaseModel):
+    """Same as InvoiceCreateRequest but without client_id -- the client is derived from the
+    project on the path (a project has exactly one client)."""
+
+    feature_ids: list[int]
+    tax_amount: float = 0
+    notes: str | None = None
+
+
 class InvoiceLineItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,6 +38,7 @@ class InvoiceOut(BaseModel):
 
     id: int
     client_id: int
+    project_id: int
     status: InvoiceStatus
     subtotal: float
     discount_amount: float
