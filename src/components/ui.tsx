@@ -3,12 +3,12 @@
 import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 export function Card({ children, className = "", variant = "default" }: { children: ReactNode; className?: string; variant?: "default" | "alert" | "spotlight" | "table" }) {
-  const base = "p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--border-strong)] border-4 border-border-strong";
+  const base = "p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] border-4 border-border-strong";
   const variants = {
     default: "bg-bg-base",
     alert: "bg-coral-red border-border-strong",
-    spotlight: "bg-bg-panel border-border-strong shadow-[8px_8px_0px_0px_#ED4A3F]",
-    table: "bg-bg-panel-alt mt-8 shadow-[8px_8px_0px_0px_var(--border-strong)] p-0"
+    spotlight: "bg-bg-panel border-border-strong shadow-[8px_8px_0px_0px_var(--brand-green)]",
+    table: "bg-bg-panel-alt mt-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-0"
   };
 
   return (
@@ -38,11 +38,11 @@ export function Button({
   children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
-  const base = "font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 transition-all shadow-[4px_4px_0px_0px_var(--border-strong)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-y-1 active:translate-x-1 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
+  const base = "font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 transition-all shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-y-1 active:translate-x-1 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants: Record<ButtonVariant, string> = {
-    primary: "bg-coral-red text-white border-border-strong",
-    secondary: "bg-bg-panel text-text-inverse border-border-strong shadow-[4px_4px_0px_0px_#ED4A3F] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_#ED4A3F]",
+    primary: "bg-brand-green text-on-brand-green border-border-strong",
+    secondary: "bg-bg-panel text-text-inverse border-border-strong shadow-[4px_4px_0px_0px_var(--brand-green)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--brand-green)]",
     danger: "bg-bg-base text-coral-red border-coral-red",
     ghost: "border-transparent bg-transparent text-text-muted shadow-none hover:text-text-main hover:bg-border-subtle active:translate-y-0 active:translate-x-0 hover:translate-y-0 hover:translate-x-0 font-data-mono normal-case tracking-widest",
   };
@@ -58,7 +58,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${props.className ?? ""}`}
     />
   );
 }
@@ -67,7 +67,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] ${props.className ?? ""}`}
     />
   );
 }
@@ -76,7 +76,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main transition-all focus:border-coral-red focus:outline-none focus:shadow-[4px_4px_0px_0px_#ED4A3F] ${props.className ?? ""}`}
+      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] ${props.className ?? ""}`}
     />
   );
 }
@@ -108,7 +108,7 @@ export function Toggle({
       className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <span
-        className={`relative h-6 w-11 shrink-0 border-2 border-border-strong transition-colors ${checked ? "bg-coral-red" : "bg-bg-panel-alt"}`}
+        className={`relative h-6 w-11 shrink-0 border-2 border-border-strong transition-colors ${checked ? "bg-brand-green" : "bg-bg-panel-alt"}`}
       >
         <span
           className={`absolute top-0.5 h-4 w-4 border border-border-strong bg-bg-base transition-all ${checked ? "left-[22px]" : "left-0.5"}`}
@@ -161,13 +161,44 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function Alert({ kind = "error", children }: { kind?: "error" | "warning"; children: ReactNode }) {
+export type ChipTone = "positive" | "warning" | "danger" | "neutral" | "brand" | "purple" | "blue" | "teal" | "orange" | "amber";
+
+const chipTones: Record<ChipTone, string> = {
+  positive: "bg-positive border-positive text-text-inverse",
+  warning: "bg-warning border-warning text-text-inverse",
+  danger: "bg-coral-red border-coral-red text-text-inverse",
+  neutral: "bg-text-muted border-text-muted text-text-inverse",
+  brand: "bg-brand-green border-brand-green text-on-brand-green",
+  purple: "bg-[#7c3aed] border-[#7c3aed] text-white",
+  blue: "bg-[#2563d6] border-[#2563d6] text-white",
+  teal: "bg-[#0d9488] border-[#0d9488] text-white",
+  orange: "bg-[#FF7A1A] border-[#FF7A1A] text-[#2A2E33]",
+  amber: "bg-[#FFC800] border-[#FFC800] text-[#2A2E33]",
+};
+
+export function Chip({ tone = "neutral", children }: { tone?: ChipTone; children: ReactNode }) {
+  return (
+    <span className={`inline-block border px-2 py-1 font-data-mono text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${chipTones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+export function BrandWatermark() {
+  return (
+    <div className="fixed inset-0 md:left-64 pointer-events-none z-0 overflow-hidden flex items-center justify-center">
+      <div className="brand-watermark w-[26vw] h-[26vw] max-w-[380px] max-h-[380px] opacity-[0.05]" />
+    </div>
+  );
+}
+
+export function Alert({ kind = "error", children, className = "" }: { kind?: "error" | "warning"; children: ReactNode; className?: string }) {
   const isWarning = kind === "warning";
   const bg = isWarning ? "bg-bg-panel" : "bg-bg-panel-alt";
   const text = isWarning ? "text-text-inverse" : "text-text-main";
 
   return (
-    <div className={`mb-8 border-l-4 border-coral-red p-4 font-data-mono text-data-mono ${bg} ${text}`}>
+    <div className={`mb-8 border-l-4 border-coral-red p-4 font-data-mono text-data-mono ${bg} ${text} ${className}`}>
       <div className="leading-relaxed">{children}</div>
     </div>
   );
@@ -222,7 +253,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
       <div
-        className="w-full max-w-2xl border-4 border-border-strong bg-bg-panel-alt shadow-[16px_16px_0px_0px_var(--border-strong)]"
+        className="w-full max-w-2xl border-4 border-border-strong bg-bg-panel-alt shadow-[16px_16px_0px_0px_var(--shadow-strong)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-bg-panel border-b-4 border-border-strong p-4 flex justify-between items-center">

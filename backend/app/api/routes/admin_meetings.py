@@ -22,7 +22,7 @@ from app.schemas.meeting import (
     MeetingReschedulePropose,
 )
 from app.services.email import notify_meeting_event
-from app.services.meeting_conflicts import find_conflict_reason, list_busy_ranges
+from app.services.meeting_conflicts import ensure_business_hours, find_conflict_reason, list_busy_ranges
 
 router = APIRouter(prefix="/api/admin/meetings", tags=["admin-meetings"], dependencies=[Depends(require_admin)])
 
@@ -185,6 +185,7 @@ def propose_reschedule(
         raise BusinessRuleViolation("Only a confirmed meeting can have a reschedule proposed")
     if _as_aware(payload.pending_start_datetime) <= _as_aware(meeting.confirmed_end_datetime):
         raise BusinessRuleViolation("A reschedule must be proposed for a time after the currently confirmed appointment")
+    ensure_business_hours(payload.pending_start_datetime, payload.pending_end_datetime)
 
     conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime, exclude_meeting_id=meeting.id)
     if conflict:
@@ -278,6 +279,7 @@ def propose_project_reschedule(
         raise BusinessRuleViolation("Only a confirmed meeting can have a reschedule proposed")
     if _as_aware(payload.pending_start_datetime) <= _as_aware(meeting.confirmed_end_datetime):
         raise BusinessRuleViolation("A reschedule must be proposed for a time after the currently confirmed appointment")
+    ensure_business_hours(payload.pending_start_datetime, payload.pending_end_datetime)
 
     conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime, exclude_meeting_id=meeting.id)
     if conflict:

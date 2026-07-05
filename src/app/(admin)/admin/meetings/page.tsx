@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { BusyRange, Meeting, MeetingBlock } from "@/lib/types";
 import { Button, Card, CardBody, CardHeader, PageHeader, StatusBadge } from "@/components/ui";
@@ -15,6 +16,8 @@ function toLocalDateParam(date: Date): string {
 }
 
 export default function AdminMeetingsPage() {
+  const searchParams = useSearchParams();
+  const meetingIdParam = searchParams.get("meetingId");
   const [filter, setFilter] = useAdminProjectFilter();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
@@ -30,6 +33,10 @@ export default function AdminMeetingsPage() {
     const data = await apiRequest<Meeting[]>(endpoint);
     setMeetings(data);
     setLoading(false);
+    if (meetingIdParam) {
+      const match = data.find((m) => m.id === Number(meetingIdParam));
+      if (match) setActiveMeeting(match);
+    }
   }
 
   async function loadBlocks() {
@@ -146,11 +153,11 @@ export default function AdminMeetingsPage() {
               <button
                 key={m.id}
                 onClick={() => { setActiveMeeting(m); setDetailError(null); }}
-                className="w-full text-left flex items-stretch border-4 border-border-strong bg-bg-panel-alt overflow-hidden shadow-[6px_6px_0px_0px_var(--border-strong)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_var(--border-strong)] transition-all group"
+                className="w-full text-left flex items-stretch border-4 border-border-strong bg-bg-panel-alt overflow-hidden shadow-[6px_6px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_var(--shadow-strong)] transition-all group"
               >
                 {/* Date badge */}
                 <div className="flex-shrink-0 w-20 bg-bg-panel border-r-4 border-border-strong flex flex-col items-center justify-center py-4">
-                  <span className="font-data-mono text-[10px] uppercase tracking-widest text-coral-red font-bold">{monthStr}</span>
+                  <span className="font-data-mono text-[10px] uppercase tracking-widest text-brand-green font-bold">{monthStr}</span>
                   <span className="font-display-2xl text-4xl font-black text-white leading-none">{dayStr}</span>
                 </div>
 

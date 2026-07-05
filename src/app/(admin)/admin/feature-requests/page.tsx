@@ -11,7 +11,7 @@ export default function AdminFeaturesLandingPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Link
           href="/admin/feature-requests/requests"
-          className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--border-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--border-strong)] transition-all block"
+          className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] transition-all block"
         >
           <h3 className="font-headline-lg text-headline-lg font-black uppercase text-text-main mb-3 leading-tight">
             Feature Requests
@@ -23,7 +23,7 @@ export default function AdminFeaturesLandingPage() {
 
         <Link
           href="/admin/feature-requests/base-features"
-          className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--border-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--border-strong)] transition-all block"
+          className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] transition-all block"
         >
           <h3 className="font-headline-lg text-headline-lg font-black uppercase text-text-main mb-3 leading-tight">
             Base + Extra Features

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiRequest, ApiError } from "@/lib/api";
 import { User } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Input, Label, PageHeader } from "@/components/ui";
+import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
 
 export default function AdminUsersPage() {
   const [clients, setClients] = useState<User[]>([]);
@@ -75,7 +76,7 @@ export default function AdminUsersPage() {
       />
 
       {showForm && (
-        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--border-strong)] p-6 md:p-8">
+        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-6 md:p-8">
           <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
             Create Client Account
           </h3>
@@ -145,10 +146,9 @@ export default function AdminUsersPage() {
             </Field>
             <Field>
               <Label>Project Start Date</Label>
-              <Input
-                type="date"
+              <BrutalistDatePicker
                 value={form.project_start_date}
-                onChange={(e) => setForm({ ...form, project_start_date: e.target.value })}
+                onChange={(val) => setForm({ ...form, project_start_date: val })}
               />
             </Field>
             <Field className="flex items-center gap-3 md:col-span-1 pt-8">
@@ -194,7 +194,7 @@ export default function AdminUsersPage() {
               const initial = c.full_name ? c.full_name[0].toUpperCase() : "?";
               return (
                 <Link key={c.id} href={`/admin/users/${c.id}`} className="group block h-full">
-                  <div className="relative overflow-hidden bg-bg-panel-alt border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_var(--border-strong)] h-full flex flex-col p-6">
+                  <div className="relative overflow-hidden bg-bg-panel-alt border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)] transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] h-full flex flex-col p-6">
                     {/* Watermark */}
                     <div className="absolute bottom-2 right-6 text-[100px] font-black text-border-strong/10 select-none z-0 leading-none pointer-events-none">
                       {watermark}
@@ -202,10 +202,10 @@ export default function AdminUsersPage() {
 
                     <div className="relative z-10">
                       <div className="flex justify-between items-start mb-10">
-                        <div className="w-10 h-10 bg-coral-red border-2 border-border-strong flex items-center justify-center font-bold text-white shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
+                        <div className="w-10 h-10 bg-brand-green border-2 border-border-strong flex items-center justify-center font-bold text-on-brand-green shadow-[3px_3px_0px_0px_var(--shadow-strong)] text-xl">
                           {initial}
                         </div>
-                        <div className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase ${c.is_active ? 'bg-forest-green text-white' : 'bg-border-muted text-white'}`}>
+                        <div className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase text-white ${c.is_active ? 'bg-brand-green' : 'bg-coral-red'}`}>
                           {c.is_active ? "Active" : "Inactive"}
                         </div>
                       </div>

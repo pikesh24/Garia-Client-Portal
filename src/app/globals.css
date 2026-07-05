@@ -12,6 +12,10 @@
   --text-muted: #8A8F95;
   --border-strong: #2A2E33;
   --border-subtle: rgba(42, 46, 51, 0.15);
+  --brand-green: #15BB00;
+  --on-brand-green: #0A2E08;
+  --shadow-strong: var(--border-strong);
+  --footer-strip: #2A2E33;
 }
 
 html.dark {
@@ -26,6 +30,9 @@ html.dark {
   --text-muted: #c1c7ce;
   --border-strong: #E8E2D6;
   --border-subtle: rgba(232, 226, 214, 0.3);
+  --brand-green: #15BB00;
+  --on-brand-green: #0A2E08;
+  --shadow-strong: rgba(0, 0, 0, 0.55);
 }
 
 @theme inline {
@@ -40,6 +47,8 @@ html.dark {
   --color-border-subtle: var(--border-subtle);
   --color-positive: var(--positive);
   --color-warning: var(--warning);
+  --color-brand-green: var(--brand-green);
+  --color-on-brand-green: var(--on-brand-green);
 
   /* Aliases for an older token naming scheme still used on some pages */
   --color-amber: var(--accent);
@@ -166,6 +175,47 @@ html.dark {
   --text-data-mono: 14px;
   --text-data-mono--line-height: 1.4;
   --text-data-mono--font-weight: 500;
+}
+
+@media print {
+  /* #invoice-print-root is portaled straight to document.body (see billing/page.tsx), so
+     hiding the entire app shell here can't affect it — no leftover invisible-but-laid-out
+     height from Sidebar/min-h-screen to pad the print output with a blank trailing page. */
+  .no-print { display: none !important; }
+  #invoice-print-root { position: static !important; left: 0; top: 0; width: 100%; }
+
+  /* <body> carries the app's own cream bg-bg-base fill; without this it bleeds through
+     as a tinted strip below the invoice card instead of plain white page margin. */
+  html, body { background: #FFFFFF !important; }
+
+  /* Chrome's print dialog drops background colors/images by default unless the user
+     manually checks "Background graphics" — this forces them to print regardless,
+     otherwise the dark group bars / TOTAL DUE fill render as empty outlines. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+}
+
+.brand-watermark,
+.brand-mark {
+  -webkit-mask-image: url('/brand/garia-watermark.png');
+  mask-image: url('/brand/garia-watermark.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.brand-watermark {
+  background-color: var(--text-main);
+}
+
+.brand-mark {
+  background-color: var(--brand-green);
 }
 
 @layer base {

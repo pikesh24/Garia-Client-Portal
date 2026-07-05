@@ -19,6 +19,7 @@ import {
   Toggle,
 } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
+import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
 
 function formatINR(amount: number | null): string {
   if (amount == null) return "—";
@@ -57,6 +58,10 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
   const [editDraft, setEditDraft] = useState<typeof emptyDraft | null>(null);
   const [newServiceByFeature, setNewServiceByFeature] = useState<Record<number, ServiceDraft>>({});
   const [reviewingChallenge, setReviewingChallenge] = useState<FeatureRequest | null>(null);
+  const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
+  const [editServiceDraft, setEditServiceDraft] = useState<ServiceDraft | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [confirmingCompletionFor, setConfirmingCompletionFor] = useState<FeatureRequest | null>(null);
 
   async function load() {
     const [featureData, serviceData] = await Promise.all([
@@ -111,6 +116,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
       }
       setDraft(emptyDraft);
       setServiceDrafts([]);
+      setShowAddForm(false);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not create feature");
@@ -137,6 +143,35 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not remove external service");
+    }
+  }
+
+  function startEditService(s: InfrastructureCostEntry) {
+    setEditingServiceId(s.id);
+    setEditServiceDraft({
+      name: s.module,
+      description: s.description ?? "",
+      recurring_cost: String(s.monthly_overhead_price),
+    });
+  }
+
+  async function saveServiceEdit(id: number) {
+    if (!editServiceDraft) return;
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/maintenance/infrastructure-costs/${id}`, {
+        method: "PATCH",
+        body: {
+          module: editServiceDraft.name,
+          description: editServiceDraft.description || null,
+          monthly_overhead_price: Number(editServiceDraft.recurring_cost || 0),
+        },
+      });
+      setEditingServiceId(null);
+      setEditServiceDraft(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not update external service");
     }
   }
 
@@ -170,6 +205,50 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
     }
   }
 
+  async function markInProgress(fr: FeatureRequest) {
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/feature-requests/${fr.id}/start`, { method: "PATCH" });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not mark feature in progress");
+    }
+  }
+
+  async function confirmHoursMatch(fr: FeatureRequest) {
+    const totalQuotedHours =
+      (fr.quoted_frontend_hours ?? 0) + (fr.quoted_backend_hours ?? 0) + (fr.quoted_production_hours ?? 0);
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/feature-requests/${fr.id}/complete`, {
+        method: "PATCH",
+        body: { actual_hours_taken: totalQuotedHours },
+      });
+      setConfirmingCompletionFor(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not mark feature completed");
+    }
+  }
+
+  function hoursDontMatch(fr: FeatureRequest) {
+    setConfirmingCompletionFor(null);
+    startEdit(fr);
+  }
+
+  async function approveFeature(fr: FeatureRequest) {
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/feature-requests/${fr.id}/status`, {
+        method: "PATCH",
+        body: { status: "approved" },
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not approve feature");
+    }
+  }
+
   if (!features) return <p className="text-text-muted">Loading base project...</p>;
 
   return (
@@ -178,19 +257,29 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
       <CardBody>
         {error && <Alert>{error}</Alert>}
 
-        <div className="mb-16 border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--border-strong)]">
-          <div className="border-b-4 border-border-strong bg-bg-base p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="mb-16 border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
+          <button
+            type="button"
+            onClick={() => setShowAddForm((v) => !v)}
+            className="w-full text-left border-b-4 border-border-strong bg-bg-base p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-bg-panel-alt transition-colors"
+          >
             <div>
               <h3 className="font-display-xl text-2xl font-black uppercase text-text-main leading-none mb-1">Add New Feature</h3>
               <p className="font-data-mono text-xs text-text-muted uppercase tracking-widest">Draft a base or extra feature</p>
             </div>
-            <div className="flex items-center gap-4">
-              <Toggle
-                checked={draft.is_base_feature}
-                onChange={(next) => setDraft({ ...draft, is_base_feature: next })}
-                label={draft.is_base_feature ? "Base Feature" : "Extra Feature"}
-              />
-            </div>
+            <span className="material-symbols-outlined text-2xl shrink-0 transition-transform" style={{ transform: showAddForm ? "rotate(180deg)" : "none" }}>
+              expand_more
+            </span>
+          </button>
+
+          {showAddForm && (
+          <>
+          <div className="border-b-4 border-border-strong bg-bg-base px-6 pb-6 md:px-8 flex items-center justify-end">
+            <Toggle
+              checked={draft.is_base_feature}
+              onChange={(next) => setDraft({ ...draft, is_base_feature: next })}
+              label={draft.is_base_feature ? "Base Feature" : "Extra Feature"}
+            />
           </div>
 
           <form onSubmit={createFeature} className="p-6 md:p-8">
@@ -261,10 +350,9 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
               <div className="md:col-span-3">
                 <Field>
                   <Label>Agreement Date</Label>
-                  <Input
-                    type="date"
+                  <BrutalistDatePicker
                     value={draft.agreement_date}
-                    onChange={(e) => setDraft({ ...draft, agreement_date: e.target.value })}
+                    onChange={(val) => setDraft({ ...draft, agreement_date: val })}
                   />
                 </Field>
               </div>
@@ -357,13 +445,15 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
             <div className="bg-bg-base border-4 border-border-strong p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div>
                 <Label>Calculated Live Price (INR)</Label>
-                <div className="font-display-xl text-3xl font-black text-coral-red flex items-center gap-2">
+                <div className="font-display-xl text-3xl font-black text-brand-green flex items-center gap-2">
                   {formatINR(computeLivePrice(client, draft))}
                 </div>
               </div>
               <Button type="submit" className="w-full md:w-auto px-12 py-6">Add Feature to Project</Button>
             </div>
           </form>
+          </>
+          )}
         </div>
 
         {features.length === 0 ? (
@@ -402,6 +492,32 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
           onChanged={load}
         />
       )}
+
+      {confirmingCompletionFor && (
+        <Modal open onClose={() => setConfirmingCompletionFor(null)} title="Mark As Completed">
+          <div className="space-y-6">
+            <p className="text-sm text-text-main">
+              Did the actual hours spent on <span className="font-bold">{confirmingCompletionFor.name}</span> match
+              the quoted estimate below?
+            </p>
+            <div className="bg-bg-base border-2 border-border-strong p-4">
+              <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">
+                Quoted Hours (Frontend / Backend / Production)
+              </div>
+              <div className="font-data-mono text-lg text-text-main font-bold">
+                {confirmingCompletionFor.quoted_frontend_hours ?? "—"} / {confirmingCompletionFor.quoted_backend_hours ?? "—"} /{" "}
+                {confirmingCompletionFor.quoted_production_hours ?? "—"}
+              </div>
+            </div>
+            <div className="flex gap-4 pt-2">
+              <Button onClick={() => confirmHoursMatch(confirmingCompletionFor)}>Yes, Matches</Button>
+              <Button variant="secondary" onClick={() => hoursDontMatch(confirmingCompletionFor)}>
+                No, Edit Hours
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Card>
   );
 
@@ -411,7 +527,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
     const newService = newServiceByFeature[fr.id] ?? emptyServiceDraft;
 
     return (
-      <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-card-padding shadow-[8px_8px_0px_0px_var(--border-strong)] relative group transition-all">
+      <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-card-padding shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative group transition-all">
         {editing && editDraft ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -464,10 +580,9 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
               </Field>
               <Field>
                 <Label>Agreement Date</Label>
-                <Input
-                  type="date"
+                <BrutalistDatePicker
                   value={editDraft.agreement_date}
-                  onChange={(e) => setEditDraft({ ...editDraft, agreement_date: e.target.value })}
+                  onChange={(val) => setEditDraft({ ...editDraft, agreement_date: val })}
                 />
               </Field>
             </div>
@@ -478,33 +593,97 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
 
               {featureServices.length > 0 && (
                 <div className="space-y-3 mb-6">
-                  {featureServices.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex items-center justify-between gap-4 bg-bg-panel-alt border-2 border-border-strong p-4 group"
-                    >
-                      <div>
-                        <span className="font-bold text-base text-text-main block mb-1">{s.module}</span>
-                        {s.description && <span className="text-sm text-text-muted">{s.description}</span>}
+                  {featureServices.map((s) =>
+                    editingServiceId === s.id && editServiceDraft ? (
+                      <div key={s.id} className="grid grid-cols-1 gap-4 md:grid-cols-12 items-end bg-bg-panel-alt border-2 border-brand-green p-4">
+                        <div className="md:col-span-4">
+                          <Field>
+                            <Label>Service Name</Label>
+                            <Input
+                              value={editServiceDraft.name}
+                              onChange={(e) => setEditServiceDraft({ ...editServiceDraft, name: e.target.value })}
+                            />
+                          </Field>
+                        </div>
+                        <div className="md:col-span-4">
+                          <Field>
+                            <Label>Description</Label>
+                            <Input
+                              value={editServiceDraft.description}
+                              onChange={(e) => setEditServiceDraft({ ...editServiceDraft, description: e.target.value })}
+                              placeholder="Optional details"
+                            />
+                          </Field>
+                        </div>
+                        <div className="md:col-span-2">
+                          <Field>
+                            <Label>Cost (INR/mo)</Label>
+                            <Input
+                              type="number"
+                              value={editServiceDraft.recurring_cost}
+                              onChange={(e) => setEditServiceDraft({ ...editServiceDraft, recurring_cost: e.target.value })}
+                            />
+                          </Field>
+                        </div>
+                        <div className="md:col-span-2 pb-[26px] flex gap-2">
+                          <button
+                            type="button"
+                            className="flex-1 h-[52px] bg-brand-green border-2 border-border-strong text-on-brand-green font-black hover:bg-text-main hover:text-white transition-colors flex items-center justify-center"
+                            onClick={() => saveServiceEdit(s.id)}
+                            title="Save Service"
+                          >
+                            <span className="material-symbols-outlined">check</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flex-1 h-[52px] bg-bg-base border-2 border-border-strong text-text-muted hover:text-text-main transition-colors flex items-center justify-center"
+                            onClick={() => {
+                              setEditingServiceId(null);
+                              setEditServiceDraft(null);
+                            }}
+                            title="Cancel"
+                          >
+                            <span className="material-symbols-outlined">close</span>
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-6 shrink-0">
-                        <span className="font-data-mono text-sm text-coral-red font-bold">
-                          {formatINR(s.monthly_overhead_price)}/mo
-                        </span>
-                        <button
-                          type="button"
-                          className="w-10 h-10 flex items-center justify-center bg-bg-base border-2 border-border-strong text-text-muted hover:bg-coral-red hover:text-white hover:border-coral-red transition-colors"
-                          onClick={() => deleteService(s.id)}
-                          title="Remove Service"
-                        >
-                          <span className="material-symbols-outlined text-lg">delete</span>
-                        </button>
+                    ) : (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between gap-4 bg-bg-panel-alt border-2 border-border-strong p-4 group"
+                      >
+                        <div>
+                          <span className="font-bold text-base text-text-main block mb-1">{s.module}</span>
+                          {s.description && <span className="text-sm text-text-muted">{s.description}</span>}
+                        </div>
+                        <div className="flex items-center gap-6 shrink-0">
+                          <span className="font-data-mono text-sm text-brand-green font-bold">
+                            {formatINR(s.monthly_overhead_price)}/mo
+                          </span>
+                          <button
+                            type="button"
+                            className="w-10 h-10 flex items-center justify-center bg-bg-base border-2 border-border-strong text-text-muted hover:bg-text-main hover:text-white transition-colors"
+                            onClick={() => startEditService(s)}
+                            title="Edit Service"
+                          >
+                            <span className="material-symbols-outlined text-lg">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="w-10 h-10 flex items-center justify-center bg-bg-base border-2 border-border-strong text-text-muted hover:bg-coral-red hover:text-white hover:border-coral-red transition-colors"
+                            onClick={() => deleteService(s.id)}
+                            title="Remove Service"
+                          >
+                            <span className="material-symbols-outlined text-lg">delete</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  )}
                 </div>
               )}
 
+              {editingServiceId !== null && featureServices.some((s) => s.id === editingServiceId) ? null : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-12 items-end bg-bg-base border-2 border-border-strong p-4">
                 <div className="md:col-span-4">
                   <Field>
@@ -560,6 +739,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                   </button>
                 </div>
               </div>
+              )}
             </div>
 
             <div className="flex gap-4 pt-6 border-t-2 border-border-strong">
@@ -586,9 +766,15 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                   <span className="font-data-mono text-xs uppercase tracking-widest text-text-muted bg-bg-panel-alt px-2 py-1 border border-border-strong">
                     ID: #{fr.id} {fr.feature_id ? `· ${fr.feature_id}` : ""}
                   </span>
-                  <StatusBadge status={fr.is_base_feature ? (fr.base_feature_activated ? "completed" : "pending") : fr.status} />
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Status:</span>
+                    <StatusBadge status={fr.is_base_feature && !fr.base_feature_activated ? "pending" : fr.status} />
+                  </span>
                   {fr.is_base_feature && fr.challenge_status !== "none" && (
-                    <StatusBadge status={fr.challenge_status} />
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Challenge:</span>
+                      <StatusBadge status={fr.challenge_status} />
+                    </span>
                   )}
                 </div>
                 <h4 className="font-headline-lg text-2xl font-black uppercase text-text-main leading-tight mb-2">
@@ -600,6 +786,21 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                 {fr.is_base_feature && fr.challenge_status !== "none" && (
                   <Button variant="secondary" onClick={() => setReviewingChallenge(fr)}>
                     Review Challenge
+                  </Button>
+                )}
+                {fr.status === "under_review" && (
+                  <Button variant="secondary" onClick={() => approveFeature(fr)}>
+                    Approve
+                  </Button>
+                )}
+                {fr.status === "approved" && (
+                  <Button variant="secondary" onClick={() => markInProgress(fr)}>
+                    Mark In Progress
+                  </Button>
+                )}
+                {fr.status === "in_progress" && (
+                  <Button variant="secondary" onClick={() => setConfirmingCompletionFor(fr)}>
+                    Mark Completed
                   </Button>
                 )}
                 <Button variant="secondary" onClick={() => startEdit(fr)}>
@@ -619,7 +820,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                 <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">
                   Calculated Price
                 </div>
-                <div className="font-data-mono text-sm text-coral-red font-bold">{formatINR(fr.price)}</div>
+                <div className="font-data-mono text-sm text-brand-green font-bold">{formatINR(fr.price)}</div>
               </div>
               <div>
                 <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Agreement Date</div>
@@ -639,7 +840,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                         <div className="font-bold text-sm text-text-main">{s.module}</div>
                         {s.description && <div className="text-xs text-text-muted mt-1">{s.description}</div>}
                       </div>
-                      <div className="font-data-mono text-xs text-coral-red font-bold shrink-0 text-right">
+                      <div className="font-data-mono text-xs text-brand-green font-bold shrink-0 text-right">
                         {formatINR(s.monthly_overhead_price)}<span className="text-[10px] text-text-muted block md:inline md:ml-1">/mo</span>
                       </div>
                     </div>
@@ -731,6 +932,7 @@ function ChallengeReviewModal({
           setBody={setBody}
           sendMessage={sendMessage}
           sending={sending}
+          readOnly={!isOpen}
         />
         {isOpen && (
           <div className="flex gap-4 pt-2">

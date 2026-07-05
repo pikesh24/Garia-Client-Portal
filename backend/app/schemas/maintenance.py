@@ -62,6 +62,13 @@ class ProjectInfrastructureCostEntryCreateRequest(BaseModel):
     monthly_overhead_price: float
 
 
+class InfrastructureCostEntryUpdateRequest(BaseModel):
+    module: str
+    description: str | None = None
+    billing_type: str = "recurring"
+    monthly_overhead_price: float
+
+
 class InfrastructureCostEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

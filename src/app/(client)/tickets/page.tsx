@@ -31,7 +31,10 @@ export default function TicketsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    if (!currentProject) return;
+    if (!currentProject) {
+      setLoading(false);
+      return;
+    }
     const data = await apiRequest<Ticket[]>(`/api/projects/${currentProject.id}/tickets`);
     setTickets(data);
     setLoading(false);
@@ -110,7 +113,7 @@ export default function TicketsPage() {
         <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
           File a New Incident
         </h3>
-        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--border-strong)] p-6 md:p-8">
+        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-6 md:p-8">
           <form onSubmit={fileTicket}>
             {error && <Alert>{error}</Alert>}
             
@@ -130,18 +133,18 @@ export default function TicketsPage() {
                 <Label>Media / Screenshot (Required)</Label>
                 <div
                   className={`relative flex flex-col items-center justify-center border-4 border-dashed p-10 text-center transition-colors h-full min-h-[250px] ${
-                    dragActive ? "border-coral-red bg-coral-red/5" : "border-border-strong bg-bg-base hover:border-text-main"
+                    dragActive ? "border-brand-green bg-brand-green/5" : "border-border-strong bg-bg-base hover:border-text-main"
                   }`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
                 >
-                  <span className={`material-symbols-outlined text-5xl mb-4 ${dragActive ? "text-coral-red" : "text-text-muted"}`} data-icon="upload_file">
+                  <span className={`material-symbols-outlined text-5xl mb-4 ${dragActive ? "text-brand-green" : "text-text-muted"}`} data-icon="upload_file">
                     upload_file
                   </span>
                   <p className="font-data-mono text-text-main mb-2 font-bold">
-                    {fileName ? <span className="text-coral-red uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
+                    {fileName ? <span className="text-brand-green uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
                   </p>
                   <p className="font-data-mono text-xs text-text-muted uppercase tracking-widest mb-6">
                     OR CLICK TO BROWSE
@@ -195,7 +198,7 @@ export default function TicketsPage() {
                   onClick={() => setSelected(t)}
                   className={`block w-full border-4 p-5 text-left transition-all ${
                     selected?.id === t.id 
-                      ? "border-text-main bg-text-main text-white shadow-[4px_4px_0px_0px_var(--border-strong)]" 
+                      ? "border-text-main bg-[var(--footer-strip)] text-white shadow-[4px_4px_0px_0px_var(--shadow-strong)]" 
                       : "border-border-strong bg-bg-base hover:border-text-main"
                   }`}
                 >
@@ -226,7 +229,7 @@ export default function TicketsPage() {
                 <p className="font-data-mono uppercase tracking-widest">Select a ticket to view its timeline</p>
               </div>
             ) : (
-              <div className="border-4 border-border-strong bg-bg-base p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--border-strong)]">
+              <div className="border-4 border-border-strong bg-bg-base p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 border-b-2 border-border-strong pb-8">
                   <div>
                     <div className="flex items-center gap-3 mb-3">
@@ -253,10 +256,10 @@ export default function TicketsPage() {
                   
                   {/* Creation Event */}
                   <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong bg-text-main text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--border-strong)] relative z-10">
-                      <span className="material-symbols-outlined text-sm">add</span>
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong bg-[var(--footer-strip)] text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10">
+                      <span className="material-symbols-outlined text-xl font-bold">add</span>
                     </div>
-                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] border-2 border-border-strong bg-bg-panel-alt p-4 shadow-[4px_4px_0px_0px_var(--border-strong)]">
+                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] border-2 border-border-strong bg-bg-panel-alt p-4 shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-bold text-text-main">Ticket Raised</span>
                         <span className="font-data-mono text-[10px] text-text-muted">
@@ -277,15 +280,15 @@ export default function TicketsPage() {
                   {/* History Events */}
                   {selected.status_history.map((h) => (
                     <div key={h.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                      <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--border-strong)] relative z-10 ${
+                      <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10 ${
                         h.status === 'resolved' ? 'bg-forest-green text-white' : 
                         h.status === 'out_of_scope' ? 'bg-coral-red text-white' : 'bg-amber text-black'
                       }`}>
-                        <span className="material-symbols-outlined text-sm">
+                        <span className="material-symbols-outlined text-xl font-bold">
                           {h.status === 'resolved' ? 'check' : h.status === 'out_of_scope' ? 'close' : 'update'}
                         </span>
                       </div>
-                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] border-2 border-border-strong bg-bg-base p-4 shadow-[4px_4px_0px_0px_var(--border-strong)]">
+                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] border-2 border-border-strong bg-bg-base p-4 shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
                         <div className="flex items-center justify-between mb-2">
                           <StatusBadge status={h.status} />
                           <span className="font-data-mono text-[10px] text-text-muted">

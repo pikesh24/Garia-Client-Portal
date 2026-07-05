@@ -5,7 +5,40 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { Project } from "@/lib/types";
-import { Button, Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
+
+const AREAS = [
+  {
+    label: "Base + Extra Features",
+    description: "View and manage the project's base features, extra features, hours, and pricing.",
+    href: (id: string, projectId: string) => `/admin/users/${id}/projects/${projectId}/base-features`,
+  },
+  {
+    label: "Support Tickets",
+    description: "Review and resolve support tickets filed against this project.",
+    href: (id: string, projectId: string) => `/admin/tickets?clientId=${id}&projectId=${projectId}`,
+  },
+  {
+    label: "Meetings",
+    description: "Confirm, reschedule, or review meetings booked on this project.",
+    href: (id: string, projectId: string) => `/admin/meetings?clientId=${id}&projectId=${projectId}`,
+  },
+  {
+    label: "Billing",
+    description: "Generate, finalize, and review invoices for this project.",
+    href: (id: string, projectId: string) => `/admin/billing?clientId=${id}&projectId=${projectId}`,
+  },
+  {
+    label: "Maintenance",
+    description: "Track infrastructure costs and annual maintenance compliance.",
+    href: (id: string, projectId: string) => `/admin/maintenance?clientId=${id}&projectId=${projectId}`,
+  },
+  {
+    label: "Discounts",
+    description: "Apply or manage discount rules for this project's invoices.",
+    href: (id: string, projectId: string) => `/admin/billing?clientId=${id}&projectId=${projectId}&tab=discounts`,
+  },
+];
 
 export default function AdminProjectMenuPage() {
   const params = useParams<{ id: string; projectId: string }>();
@@ -20,43 +53,21 @@ export default function AdminProjectMenuPage() {
   return (
     <div className="space-y-6">
       <PageHeader title={`Project: ${project.name}`} />
-      <Card>
-        <CardHeader>Management Areas</CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Link href={`/admin/users/${params.id}/projects/${params.projectId}/base-features`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Base + Extra Features
-              </Button>
-            </Link>
-            <Link href={`/admin/tickets?clientId=${params.id}&projectId=${params.projectId}`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Support Tickets
-              </Button>
-            </Link>
-            <Link href={`/admin/meetings?clientId=${params.id}&projectId=${params.projectId}`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Meetings
-              </Button>
-            </Link>
-            <Link href={`/admin/billing?clientId=${params.id}&projectId=${params.projectId}`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Billing
-              </Button>
-            </Link>
-            <Link href={`/admin/maintenance?clientId=${params.id}&projectId=${params.projectId}`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Maintenance
-              </Button>
-            </Link>
-            <Link href={`/admin/billing?clientId=${params.id}&projectId=${params.projectId}&tab=discounts`}>
-              <Button type="button" variant="secondary" className="w-full">
-                Discounts
-              </Button>
-            </Link>
-          </div>
-        </CardBody>
-      </Card>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {AREAS.map((area) => (
+          <Link
+            key={area.label}
+            href={area.href(params.id, params.projectId)}
+            className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] transition-all block"
+          >
+            <h3 className="font-headline-lg text-headline-lg font-black uppercase text-text-main mb-3 leading-tight">
+              {area.label}
+            </h3>
+            <p className="text-sm text-text-muted">{area.description}</p>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

@@ -95,7 +95,7 @@ export default function MaintenancePage() {
           onClick={() => setTab("costs")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "costs" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -105,7 +105,7 @@ export default function MaintenancePage() {
           onClick={() => setTab("compliance")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "compliance" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -125,7 +125,7 @@ export default function MaintenancePage() {
 
       {tab === "costs" && (
         <div className="space-y-6">
-          <div className="bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] p-1">
+          <div className="bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-1">
             <div className="bg-text-main p-4 flex justify-between items-center">
               <h3 className="font-data-mono text-white text-xs font-black uppercase tracking-widest">
                 INFRASTRUCTURE COST REGISTRY
@@ -158,7 +158,7 @@ export default function MaintenancePage() {
                           </span>
                         </td>
                         <td className="p-4 font-mono font-bold text-text-muted">{c.billing_type}</td>
-                        <td className="p-4 font-mono font-black text-xl text-right text-text-main group-hover:text-coral-red transition-colors">
+                        <td className="p-4 font-mono font-black text-xl text-right text-text-main group-hover:text-brand-green transition-colors">
                           ₹{c.monthly_overhead_price.toFixed(2)}<span className="text-sm text-text-muted ml-1">/mo</span>
                         </td>
                       </tr>
@@ -173,7 +173,7 @@ export default function MaintenancePage() {
 
       {tab === "compliance" && (
         <div className="space-y-6">
-          <div className="bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] p-1">
+          <div className="bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-1">
             <div className="bg-text-main p-4 flex justify-between items-center">
               <h3 className="font-data-mono text-white text-xs font-black uppercase tracking-widest">
                 ANNUAL MAINTENANCE COMPLIANCE
@@ -194,7 +194,7 @@ export default function MaintenancePage() {
                   const file = selectedFiles[r.id];
 
                   return (
-                    <div key={r.id} className={`border-4 ${isRejected ? 'border-coral-red shadow-[8px_8px_0px_0px_var(--coral-red)]' : 'border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)]'} relative overflow-hidden transition-all`}>
+                    <div key={r.id} className={`border-4 ${isRejected ? 'border-coral-red shadow-[8px_8px_0px_0px_var(--coral-red)]' : 'border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)]'} relative overflow-hidden transition-all`}>
                       
                       {/* Rejected Warning Banner */}
                       {isRejected && (
@@ -278,7 +278,7 @@ export default function MaintenancePage() {
                                   disabled={submittingId === r.id || !file}
                                   className={`w-full font-black text-sm uppercase px-8 py-4 border-4 transition-all flex items-center justify-center gap-2
                                     ${file 
-                                      ? "bg-text-main text-white border-text-main shadow-[6px_6px_0px_0px_var(--forest-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none cursor-pointer" 
+                                      ? "bg-[var(--footer-strip)] text-white border-text-main shadow-[6px_6px_0px_0px_var(--forest-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none cursor-pointer" 
                                       : "bg-bg-panel-alt text-text-muted border-border-strong cursor-not-allowed opacity-50"
                                     }
                                   `}

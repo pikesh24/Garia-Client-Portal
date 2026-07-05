@@ -33,7 +33,10 @@ export default function FeatureRequestsPage() {
   const [selected, setSelected] = useState<FeatureRequest | null>(null);
 
   async function load() {
-    if (!currentProject) return;
+    if (!currentProject) {
+      setLoading(false);
+      return;
+    }
     try {
       const data = await apiRequest<FeatureRequest[]>(`/api/projects/${currentProject.id}/feature-requests`);
       setRequests(data);
@@ -68,7 +71,7 @@ export default function FeatureRequestsPage() {
     <div className="space-y-6">
       <div className="mb-12 border-b-4 border-border-strong pb-8 flex flex-col md:flex-row md:items-end justify-between">
         <div>
-          <p className="font-label-caps text-label-caps tracking-[0.1em] uppercase text-coral-red font-bold mb-2">
+          <p className="font-label-caps text-label-caps tracking-[0.1em] uppercase text-brand-green font-bold mb-2">
             Backlog &middot; Intake
           </p>
           <h2 className="font-display-2xl text-display-2xl font-black uppercase text-text-main leading-none">
@@ -96,7 +99,7 @@ export default function FeatureRequestsPage() {
             <button
               key={fr.id}
               onClick={() => setSelected(fr)}
-              className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--border-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--border-strong)] transition-all"
+              className="text-left bg-bg-base border-4 border-border-strong p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] transition-all"
             >
               <span className="absolute -right-4 -bottom-10 opacity-10 pointer-events-none font-bg-numeral text-[10rem] text-text-main leading-none select-none">
                 {String.fromCharCode(65 + (i % 26))}
@@ -136,18 +139,25 @@ export default function FeatureRequestsPage() {
         </form>
       </Modal>
 
-      {selected && (
-        <FeatureRequestDetail featureRequest={selected} onClose={() => setSelected(null)} onChanged={load} />
+      {selected && currentProject && (
+        <FeatureRequestDetail
+          projectId={currentProject.id}
+          featureRequest={selected}
+          onClose={() => setSelected(null)}
+          onChanged={load}
+        />
       )}
     </div>
   );
 }
 
 function FeatureRequestDetail({
+  projectId,
   featureRequest,
   onClose,
   onChanged,
 }: {
+  projectId: number;
   featureRequest: FeatureRequest;
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -172,7 +182,10 @@ function FeatureRequestDetail({
     e.preventDefault();
     setError(null);
     try {
-      await apiRequest(`/api/feature-requests/${featureRequest.id}`, { method: "PUT", body: { name, description } });
+      await apiRequest(`/api/projects/${projectId}/feature-requests/${featureRequest.id}`, {
+        method: "PUT",
+        body: { name, description },
+      });
       setEditing(false);
       await onChanged();
     } catch (err) {
@@ -185,10 +198,13 @@ function FeatureRequestDetail({
     setSending(true);
     setError(null);
     try {
-      const message = await apiRequest<FeatureRequestMessage>(`/api/feature-requests/${featureRequest.id}/messages`, {
-        method: "POST",
-        body: { body },
-      });
+      const message = await apiRequest<FeatureRequestMessage>(
+        `/api/projects/${projectId}/feature-requests/${featureRequest.id}/messages`,
+        {
+          method: "POST",
+          body: { body },
+        }
+      );
       setMessages((prev) => [...prev, message]);
       setBody("");
       await onChanged();

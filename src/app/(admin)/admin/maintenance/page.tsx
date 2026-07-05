@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { apiRequest, ApiError, fileUrl } from "@/lib/api";
 import { FeatureRequest, InfrastructureCostEntry, MaintenanceRecord, User } from "@/lib/types";
 import { Alert, StatusBadge } from "@/components/ui";
+import { useConfirm } from "@/lib/confirm";
 import { BrutalistSelect } from "@/components/BrutalistSelect";
 import { AdminProjectFilter, ProjectFilterValue, useAdminProjectFilter } from "@/components/AdminProjectFilter";
+import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
 
 type Tab = "costs" | "compliance";
 
@@ -30,7 +33,7 @@ export default function AdminMaintenancePage() {
           onClick={() => setTab("costs")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "costs" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -40,7 +43,7 @@ export default function AdminMaintenancePage() {
           onClick={() => setTab("compliance")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "compliance" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -70,6 +73,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
   const [overhead, setOverhead] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const confirm = useConfirm();
 
   async function loadAll() {
     const costsEndpoint = filter.projectId
@@ -140,12 +144,17 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function removeCost(id: number) {
-    if (!confirm("Permanently erase this infrastructure overhead allocation?")) return;
+    const ok = await confirm({
+      message: "Permanently erase this infrastructure overhead allocation?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await apiRequest(`/api/admin/maintenance/infrastructure-costs/${id}`, { method: "DELETE" });
       await loadAll();
     } catch (err) {
-      alert("Failed to delete cost");
+      toast.error("Failed to delete cost");
     }
   }
 
@@ -155,7 +164,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
   return (
     <div className="space-y-12">
       {/* Creation Form */}
-      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--border-strong)] relative">
+      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative">
         <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-text-main mb-8 border-b-4 border-border-strong pb-4">
           SYSTEM TERMINAL: ALLOCATE NEW OVERHEAD COST
         </h3>
@@ -164,7 +173,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
           {error && <Alert kind="error">{error}</Alert>}
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-50">
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Target Environment Mapping
               </label>
@@ -183,7 +192,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
               )}
             </div>
 
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Linked Feature Mapping (Optional)
               </label>
@@ -197,7 +206,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Module Descriptor
               </label>
@@ -210,7 +219,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
               />
             </div>
 
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Billing Category
               </label>
@@ -223,7 +232,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
               />
             </div>
 
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Evaluated Overheard Price (₹/Month)
               </label>
@@ -248,7 +257,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
               disabled={submitting || !clientId}
               className={`font-black text-sm uppercase px-8 py-4 border-4 transition-all flex items-center justify-center gap-3 w-full md:w-auto
                 ${clientId 
-                  ? "bg-text-main text-white border-text-main shadow-[6px_6px_0px_0px_var(--coral-red)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none" 
+                  ? "bg-[var(--footer-strip)] text-white border-text-main shadow-[6px_6px_0px_0px_var(--brand-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none"
                   : "bg-bg-base text-text-muted border-border-strong cursor-not-allowed opacity-50"
                 }`}
             >
@@ -276,13 +285,13 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
               const client = clients.find(u => u.id === c.client_id);
               const feature = features.find(f => f.id === c.feature_request_id);
               return (
-                <div key={c.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--border-strong)] relative overflow-hidden">
+                <div key={c.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative overflow-hidden">
                   <div className="p-6 relative z-10 flex-1">
                     <div className="flex justify-between items-start mb-6">
                       <h4 className="font-headline-lg font-black text-2xl uppercase w-2/3 truncate">
                         {c.module}
                       </h4>
-                      <div className="px-3 py-1 font-data-mono text-[10px] font-bold uppercase tracking-widest border-2 bg-text-main text-white border-text-main">
+                      <div className="px-3 py-1 font-data-mono text-[10px] font-bold uppercase tracking-widest border-2 bg-[var(--footer-strip)] text-white border-text-main">
                         ACTIVE RECORD
                       </div>
                     </div>
@@ -302,7 +311,7 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
                       </div>
                       <div className="flex justify-between pt-2">
                         <span className="text-text-muted uppercase font-black">Monthly Overhead Evaluated</span>
-                        <span className="font-black text-2xl text-coral-red">
+                        <span className="font-black text-2xl text-brand-green">
                           ₹{c.monthly_overhead_price.toFixed(2)}
                         </span>
                       </div>
@@ -339,6 +348,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
 
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const confirm = useConfirm();
 
   async function loadAll() {
     const recordsEndpoint = filter.projectId
@@ -419,18 +429,19 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function approveProof(id: number) {
-    if (!confirm("Approve this maintenance compliance proof? This cannot be undone.")) return;
+    const ok = await confirm("Approve this maintenance compliance proof? This cannot be undone.");
+    if (!ok) return;
     try {
       await apiRequest(`/api/admin/maintenance/records/${id}/approve`, { method: "POST" });
       await loadAll();
     } catch (err) {
-      alert("Failed to approve");
+      toast.error("Failed to approve");
     }
   }
 
   async function rejectProof(id: number) {
     if (!rejectionReason.trim()) {
-      alert("Please provide a rejection reason.");
+      toast.warning("Please provide a rejection reason.");
       return;
     }
     try {
@@ -442,7 +453,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
       setRejectionReason("");
       await loadAll();
     } catch (err) {
-      alert("Failed to reject");
+      toast.error("Failed to reject");
     }
   }
 
@@ -451,7 +462,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   return (
     <div className="space-y-12">
       {/* Creation Form */}
-      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--border-strong)] relative">
+      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative">
         <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-text-main mb-8 border-b-4 border-border-strong pb-4">
           SYSTEM TERMINAL: GENERATE MAINTENANCE CYCLE
         </h3>
@@ -460,7 +471,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
           {error && <Alert kind="error">{error}</Alert>}
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-50">
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] lg:col-span-1">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] lg:col-span-1">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Target Environment Mapping
               </label>
@@ -479,7 +490,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
               )}
             </div>
 
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Cycle Year Designator
               </label>
@@ -492,22 +503,21 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
               />
             </div>
 
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                 Enforcement Deadline (Due Date)
               </label>
-              <input
-                type="date"
+              <BrutalistDatePicker
                 required
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full bg-white border-4 border-border-strong p-4 font-bold text-lg focus:outline-none focus:border-text-main shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)] uppercase"
+                onChange={(val) => setDueDate(val)}
+                className="w-full font-bold text-lg uppercase"
               />
             </div>
           </div>
 
           {clientId && (
-            <div className="bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] relative z-0">
+            <div className="bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] relative z-0">
               <div className="font-data-mono text-sm space-y-2 mb-6">
                 <div className="flex justify-between">
                   <span className="text-text-muted uppercase font-bold">Base Maintenance Price</span>
@@ -557,7 +567,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
           <div className="pt-4">
             <button
               type="submit"
-              className="bg-text-main text-white font-black text-sm uppercase px-8 py-4 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--coral-red)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex items-center justify-center gap-3 w-full md:w-auto"
+              className="bg-[var(--footer-strip)] text-white font-black text-sm uppercase px-8 py-4 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--brand-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex items-center justify-center gap-3 w-full md:w-auto"
             >
               [ Broadcast Compliance Requirement ]
             </button>
@@ -582,7 +592,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
             {records.map((r) => {
               const client = clients.find(u => u.id === r.client_id);
               return (
-                <div key={r.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--border-strong)] relative">
+                <div key={r.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative">
                   <div className="p-6 relative z-10 flex-1">
                     <div className="flex justify-between items-start mb-6">
                       <div>

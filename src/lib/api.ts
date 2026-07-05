@@ -56,22 +56,38 @@ export function formatApiError(err: unknown, fallback = "Something went wrong"):
   return fallback;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+// Refresh tokens are single-use/rotating server-side: once `/api/auth/refresh` is
+// called, the old refresh token is revoked and a new pair is issued. Several pages
+// fire multiple apiRequest calls in parallel (Promise.all), so if the access token
+// has expired, each one would otherwise race to refresh with the same stale refresh
+// token — only the first succeeds and the rest get logged out. Sharing a single
+// in-flight promise means concurrent 401s all await the same refresh instead of racing.
+let refreshPromise: Promise<string | null> | null = null;
 
-  const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return null;
+
+    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) {
+      clearTokens();
+      return null;
+    }
+    const data = await res.json();
+    setTokens(data.access_token, data.refresh_token);
+    return data.access_token as string;
+  })().finally(() => {
+    refreshPromise = null;
   });
-  if (!res.ok) {
-    clearTokens();
-    return null;
-  }
-  const data = await res.json();
-  setTokens(data.access_token, data.refresh_token);
-  return data.access_token as string;
+
+  return refreshPromise;
 }
 
 interface RequestOptions {

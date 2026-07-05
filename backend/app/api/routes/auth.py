@@ -14,8 +14,9 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models.auth_token import RefreshToken
+from app.models.enums import UserRole
 from app.models.user import User
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, TokenResponse
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -34,6 +35,23 @@ def _issue_tokens(user: User, db: Session) -> TokenResponse:
     )
     db.commit()
     return TokenResponse(access_token=access_token, refresh_token=raw_refresh)
+
+
+@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in use")
+
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        full_name=payload.name,
+        role=UserRole.CLIENT,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)

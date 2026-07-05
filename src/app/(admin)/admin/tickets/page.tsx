@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { API_BASE_URL, apiRequest, ApiError, fileUrl, getAccessToken } from "@/lib/api";
 import { Ticket, TicketStatus } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Label, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
 import { AdminProjectFilter, useAdminProjectFilter } from "@/components/AdminProjectFilter";
+import { useConfirm } from "@/lib/confirm";
 
 function priorityBadgeColor(priority: string) {
   switch (priority) {
@@ -16,6 +18,8 @@ function priorityBadgeColor(priority: string) {
 }
 
 export default function AdminTicketsPage() {
+  const searchParams = useSearchParams();
+  const ticketIdParam = searchParams.get("ticketId");
   const [filter, setFilter] = useAdminProjectFilter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket | null>(null);
@@ -27,6 +31,7 @@ export default function AdminTicketsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const proofInputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   async function load() {
     const endpoint = filter.projectId
@@ -34,7 +39,11 @@ export default function AdminTicketsPage() {
       : "/api/admin/tickets";
     const data = await apiRequest<Ticket[]>(endpoint);
     setTickets(data);
-    setSelected((prev) => (prev ? data.find((t) => t.id === prev.id) ?? null : null));
+    setSelected((prev) => {
+      if (prev) return data.find((t) => t.id === prev.id) ?? null;
+      if (ticketIdParam) return data.find((t) => t.id === Number(ticketIdParam)) ?? null;
+      return null;
+    });
   }
 
   useEffect(() => {
@@ -120,7 +129,12 @@ export default function AdminTicketsPage() {
 
   async function eraseTicket() {
     if (!selected) return;
-    if (!confirm("Permanently erase this ticket's full history? This cannot be undone.")) return;
+    const ok = await confirm({
+      message: "Permanently erase this ticket's full history? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await apiRequest(`/api/admin/tickets/${selected.id}`, { method: "DELETE" });
     setSelected(null);
     await load();
@@ -147,7 +161,7 @@ export default function AdminTicketsPage() {
                 onClick={() => setSelected(t)}
                 className={`block w-full border-4 p-5 text-left transition-all ${
                   selected?.id === t.id 
-                    ? "border-text-main bg-text-main text-white shadow-[4px_4px_0px_0px_var(--border-strong)]" 
+                    ? "border-text-main bg-[var(--footer-strip)] text-white shadow-[4px_4px_0px_0px_var(--shadow-strong)]" 
                     : "border-border-strong bg-bg-base hover:border-text-main"
                 }`}
               >
@@ -185,7 +199,7 @@ export default function AdminTicketsPage() {
             <div className="space-y-6">
               {error && <Alert>{error}</Alert>}
               
-              <div className="border-4 border-border-strong bg-bg-base p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--border-strong)] relative overflow-hidden">
+              <div className="border-4 border-border-strong bg-bg-base p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative overflow-hidden">
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 border-b-2 border-border-strong pb-6">
                   <div>
                     <div className="flex items-center gap-3 mb-3">
@@ -225,7 +239,7 @@ export default function AdminTicketsPage() {
                 {selected.status === 'open' || selected.status === 'in_progress' ? (
                   <div className="bg-bg-panel-alt border-2 border-border-strong p-6 mt-8 relative">
                     <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2">
-                      <span className="bg-text-main text-white font-data-mono text-[10px] font-black uppercase tracking-widest px-3 py-1 shadow-[2px_2px_0px_0px_var(--border-strong)] border-2 border-border-strong">
+                      <span className="bg-[var(--footer-strip)] text-white font-data-mono text-[10px] font-black uppercase tracking-widest px-3 py-1 shadow-[2px_2px_0px_0px_var(--shadow-strong)] border-2 border-border-strong">
                         ADMIN ACTION
                       </span>
                     </div>
@@ -242,18 +256,18 @@ export default function AdminTicketsPage() {
                         <Label>Reply Media / Proof Image</Label>
                         <div
                           className={`relative flex flex-col items-center justify-center border-2 border-dashed p-6 text-center transition-colors h-full min-h-[150px] ${
-                            dragActive ? "border-coral-red bg-coral-red/5" : "border-border-strong bg-bg-base hover:border-text-main"
+                            dragActive ? "border-brand-green bg-brand-green/5" : "border-border-strong bg-bg-base hover:border-text-main"
                           }`}
                           onDragEnter={handleDrag}
                           onDragLeave={handleDrag}
                           onDragOver={handleDrag}
                           onDrop={handleDrop}
                         >
-                          <span className={`material-symbols-outlined text-4xl mb-2 ${dragActive ? "text-coral-red" : "text-text-muted"}`} data-icon="upload_file">
+                          <span className={`material-symbols-outlined text-4xl mb-2 ${dragActive ? "text-brand-green" : "text-text-muted"}`} data-icon="upload_file">
                             upload_file
                           </span>
                           <p className="font-data-mono text-text-main mb-1 font-bold text-sm">
-                            {fileName ? <span className="text-coral-red uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
+                            {fileName ? <span className="text-brand-green uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
                           </p>
                           <p className="font-data-mono text-[10px] text-text-muted uppercase tracking-widest mb-4">
                             OR CLICK TO BROWSE

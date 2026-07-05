@@ -26,11 +26,11 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
   return (
     <header className="hidden md:flex fixed top-0 right-0 w-[calc(100%-16rem)] h-16 border-b-4 border-border-strong bg-bg-base justify-between items-center px-gutter z-40">
       <div className="flex items-center gap-8">
-        <span className="font-headline-lg text-headline-lg font-black text-coral-red tracking-tighter uppercase">
-          CLIENT PORTAL
+        <span className="font-headline-lg text-headline-lg font-black text-brand-green tracking-tighter uppercase">
+          {user?.role === "admin" ? "ADMIN PORTAL" : "CLIENT PORTAL"}
         </span>
         <div className="flex items-center gap-4 border-l-2 border-border-strong pl-8">
-          <span className="font-data-mono text-data-mono uppercase tracking-widest text-coral-red font-bold">
+          <span className="font-data-mono text-data-mono uppercase tracking-widest text-brand-green font-bold">
             {breadcrumbs.join(" / ")}
           </span>
         </div>
@@ -46,7 +46,7 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
           </button>
 
           {open && (
-            <div className="absolute right-0 mt-4 w-64 bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] z-50">
+            <div className="absolute right-0 mt-4 w-64 bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)] z-50">
               <div className="px-5 py-4 border-b-2 border-border-strong bg-bg-panel-alt">
                 <p className="font-body-md font-bold uppercase tracking-wide text-text-main">{user?.full_name}</p>
                 <p className="font-data-mono text-xs mt-1 truncate text-text-muted">{user?.email}</p>
@@ -67,7 +67,7 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
                     await logout();
                     router.push("/login");
                   }}
-                  className="block w-full px-5 py-3 text-left font-label-caps text-label-caps uppercase tracking-[0.1em] text-coral-red hover:bg-coral-red hover:text-white transition-colors"
+                  className="block w-full px-5 py-3 text-left font-label-caps text-label-caps uppercase tracking-[0.1em] text-brand-green hover:bg-brand-green hover:text-on-brand-green transition-colors"
                 >
                   LOGOUT
                 </button>
@@ -78,7 +78,7 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
         <button
           onClick={toggleTheme}
           aria-label="Toggle theme"
-          className="w-10 h-10 rounded-full border-2 border-border-strong bg-bg-panel-alt flex items-center justify-center text-text-main shadow-[3px_3px_0px_0px_var(--border-strong)] transition-all hover:-translate-x-px hover:-translate-y-px hover:shadow-[4px_4px_0px_0px_var(--border-strong)] active:translate-x-px active:translate-y-px active:shadow-none"
+          className="w-10 h-10 rounded-full border-2 border-border-strong bg-bg-panel-alt flex items-center justify-center text-text-main shadow-[3px_3px_0px_0px_var(--shadow-strong)] transition-all hover:-translate-x-px hover:-translate-y-px hover:shadow-[4px_4px_0px_0px_var(--shadow-strong)] active:translate-x-px active:translate-y-px active:shadow-none"
         >
           <span className="material-symbols-outlined text-[18px]" data-icon={dark ? "light_mode" : "dark_mode"}>
             {dark ? "light_mode" : "dark_mode"}

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError, fileUrl } from "@/lib/api";
 import { FeatureRequest, Discount, DiscountType, Invoice, User } from "@/lib/types";
 import { Alert, StatusBadge } from "@/components/ui";
+import { useConfirm } from "@/lib/confirm";
 import { BrutalistSelect } from "@/components/BrutalistSelect";
 import { AdminProjectFilter, ProjectFilterValue, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 
@@ -44,7 +45,7 @@ export default function AdminBillingPage() {
           onClick={() => setTab("invoices")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "invoices" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -54,7 +55,7 @@ export default function AdminBillingPage() {
           onClick={() => setTab("discounts")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
             ${tab === "discounts" 
-              ? "bg-text-main text-white shadow-[6px_6px_0px_0px_var(--border-strong)] translate-x-[-2px] translate-y-[-2px]" 
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
@@ -90,6 +91,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTax, setEditTax] = useState("0");
   const [editNotes, setEditNotes] = useState("");
+  const confirm = useConfirm();
 
   async function loadAll() {
     const invoicesEndpoint = filter.projectId
@@ -186,7 +188,8 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function finalize(id: number) {
-    if (!confirm("Finalize this invoice? This issues the signed document to the client and cannot be undone.")) return;
+    const ok = await confirm("Finalize this invoice? This issues the signed document to the client and cannot be undone.");
+    if (!ok) return;
     setError(null);
     setMessage(null);
     try {
@@ -199,7 +202,12 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function deleteDraft(id: number) {
-    if (!confirm("Delete this draft invoice? This cannot be undone.")) return;
+    const ok = await confirm({
+      message: "Delete this draft invoice? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await apiRequest(`/api/admin/billing/invoices/${id}`, { method: "DELETE" });
     setMessage(`Draft invoice INV-${id} deleted.`);
     await loadAll();
@@ -231,7 +239,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
   return (
     <div className="space-y-12">
       {/* CREATION FORM */}
-      <div className="border-4 border-border-strong bg-bg-base p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--border-strong)] relative overflow-hidden">
+      <div className="border-4 border-border-strong bg-bg-base p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative overflow-hidden">
         <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
           <span className="material-symbols-outlined text-[300px]">receipt_long</span>
         </div>
@@ -372,8 +380,8 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
               </div>
 
               {/* LIVE ESTIMATE TERMINAL */}
-              <div className="bg-text-main text-white border-4 border-text-main p-6 shadow-[8px_8px_0px_0px_var(--coral-red)] mt-8">
-                <h4 className="font-data-mono text-xs uppercase tracking-widest font-black mb-6 pb-2 border-b-2 border-white/20 text-coral-red">
+              <div className="bg-[var(--footer-strip)] text-white border-4 border-text-main p-6 shadow-[8px_8px_0px_0px_var(--brand-green)] mt-8">
+                <h4 className="font-data-mono text-xs uppercase tracking-widest font-black mb-6 pb-2 border-b-2 border-white/20 text-brand-green">
                   &gt;&gt; EVALUATION_MATRIX_LIVE
                 </h4>
                 
@@ -393,7 +401,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
                     <span className="text-xl">₹{previewTax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-end pt-4 border-t-2 border-white/20 mt-4">
-                    <span className="text-coral-red font-black text-lg">TOTAL_COMPUTED</span>
+                    <span className="text-brand-green font-black text-lg">TOTAL_COMPUTED</span>
                     <span className="text-3xl font-black">₹{previewTotal.toFixed(2)}</span>
                   </div>
                 </div>
@@ -402,7 +410,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
               <button
                 type="submit"
                 disabled={submitting || !clientId || !filter.projectId || selectedFeatures.length === 0}
-                className="w-full block bg-coral-red text-white font-black text-xl uppercase py-5 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--text-main)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-[6px_6px_0px_0px_var(--text-main)] disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+                className="w-full block bg-brand-green text-on-brand-green font-black text-xl uppercase py-5 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--text-main)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-[6px_6px_0px_0px_var(--text-main)] disabled:hover:translate-x-0 disabled:hover:translate-y-0"
               >
                 {submitting ? "PROCESSING..." : "GENERATE DRAFT INVOICE RECORD"}
               </button>
@@ -443,12 +451,12 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
         ) : (
           <div className="grid grid-cols-1 gap-6">
             {visibleInvoices.map((inv) => (
-              <div key={inv.id} className="border-4 border-border-strong bg-bg-panel-alt p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] transition-all hover:border-text-main">
+              <div key={inv.id} className="border-4 border-border-strong bg-bg-panel-alt p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] transition-all hover:border-text-main">
                 <div className="flex flex-col md:flex-row justify-between md:items-center gap-6">
                   {/* Left block */}
                   <div className="flex flex-col md:flex-row gap-6 md:items-center flex-1">
-                    <div className="bg-text-main text-white p-4 text-center shrink-0 w-32 border-2 border-text-main shadow-[4px_4px_0px_0px_var(--coral-red)]">
-                      <span className="block font-data-mono text-[10px] uppercase tracking-widest mb-1 text-coral-red">RECORD</span>
+                    <div className="bg-[var(--footer-strip)] text-white p-4 text-center shrink-0 w-32 border-2 border-text-main shadow-[4px_4px_0px_0px_var(--brand-green)]">
+                      <span className="block font-data-mono text-[10px] uppercase tracking-widest mb-1 text-brand-green">RECORD</span>
                       <span className="font-black text-xl">INV-{inv.id}</span>
                     </div>
                     
@@ -473,7 +481,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
                       <div className="text-text-muted">TAX: ₹{inv.tax_amount.toFixed(2)}</div>
                     </div>
                     <div className="text-right border-l-4 border-border-strong pl-6">
-                      <div className="font-data-mono text-[10px] uppercase font-bold text-coral-red mb-1">FINAL AMT</div>
+                      <div className="font-data-mono text-[10px] uppercase font-bold text-brand-green mb-1">FINAL AMT</div>
                       <div className="font-black text-3xl">₹{inv.total.toFixed(2)}</div>
                     </div>
                   </div>
@@ -497,7 +505,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
                     )}
                   </div>
                   
-                  <button onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)} className="font-data-mono text-xs uppercase font-bold flex items-center gap-2 hover:text-coral-red transition-colors">
+                  <button onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)} className="font-data-mono text-xs uppercase font-bold flex items-center gap-2 hover:text-brand-green transition-colors">
                     {expandedId === inv.id ? "CLOSE DIAGNOSTICS" : "EXPAND DIAGNOSTICS"}
                     <span className="material-symbols-outlined">{expandedId === inv.id ? "expand_less" : "expand_more"}</span>
                   </button>
@@ -524,7 +532,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
                       </div>
                     </div>
                     <div className="flex gap-4">
-                      <button onClick={() => overwriteInvoice(inv.id)} className="bg-text-main text-white font-bold uppercase text-xs px-6 py-3 hover:bg-accent transition-colors">
+                      <button onClick={() => overwriteInvoice(inv.id)} className="bg-[var(--footer-strip)] text-white font-bold uppercase text-xs px-6 py-3 hover:bg-accent transition-colors">
                         COMMIT OVERWRITE
                       </button>
                       <button onClick={() => setEditingId(null)} className="border-2 border-text-main text-text-main font-bold uppercase text-xs px-6 py-3 hover:bg-border-strong/10 transition-colors">
@@ -537,7 +545,7 @@ function InvoicesTab({ filter }: { filter: ProjectFilterValue }) {
                 {/* Expanded Details Panel */}
                 {expandedId === inv.id && (
                   <div className="mt-6 bg-bg-base border-4 border-border-strong p-6">
-                    <h5 className="font-data-mono font-black text-sm uppercase tracking-widest text-coral-red mb-4">
+                    <h5 className="font-data-mono font-black text-sm uppercase tracking-widest text-brand-green mb-4">
                       Line Item Diagnostics
                     </h5>
                     {inv.line_items.length === 0 ? (
@@ -589,6 +597,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
   const [editType, setEditType] = useState<DiscountType>("percentage");
   const [editValue, setEditValue] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const confirm = useConfirm();
 
   async function loadAll() {
     const discountsEndpoint = filter.projectId
@@ -642,7 +651,12 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function deleteDiscount(id: number) {
-    if (!confirm("Permanently remove this discount reduction profile? This cannot be undone.")) return;
+    const ok = await confirm({
+      message: "Permanently remove this discount reduction profile? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await apiRequest(`/api/admin/discounts/${id}`, { method: "DELETE" });
     setMessage("Discount reduction profile deleted.");
     await loadAll();
@@ -674,8 +688,8 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
   return (
     <div className="space-y-12">
       {/* CREATION FORM - BASED ON MOCKUP */}
-      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--border-strong)] relative">
-        <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-coral-red mb-8 border-b-4 border-border-strong pb-4">
+      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative">
+        <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-brand-green mb-8 border-b-4 border-border-strong pb-4">
           DESIGN WORKSPACE: CONFIGURE CLIENT DISCOUNT CONFIGURATION
         </h3>
 
@@ -689,7 +703,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
             </div>
             
             {/* Target Customer Mapping */}
-            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] relative z-50">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] relative z-50">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted xl:w-1/3">
                 Target Customer Mapping
               </label>
@@ -711,7 +725,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
             </div>
 
             {/* Promotional Rule Tag */}
-            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] relative z-10">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] relative z-10">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted xl:w-1/3">
                 Promotional Rule Tag
               </label>
@@ -726,7 +740,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
               {/* Math Evaluation Logic */}
-              <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+              <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
                 <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                   Math Evaluation Logic
                 </label>
@@ -735,13 +749,13 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
                     type="button"
                     onClick={() => setDiscountType("percentage")}
                     className={`flex-1 p-4 border-4 font-black uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-3 ${
-                      discountType === "percentage" 
-                        ? "bg-text-main border-text-main text-white shadow-[4px_4px_0px_0px_var(--coral-red)] translate-x-[-2px] translate-y-[-2px]" 
+                      discountType === "percentage"
+                        ? "bg-text-main border-text-main text-white shadow-[4px_4px_0px_0px_var(--brand-green)] translate-x-[-2px] translate-y-[-2px]"
                         : "bg-white border-border-strong text-text-muted hover:border-text-main"
                     }`}
                   >
-                    <div className={`w-5 h-5 border-4 flex items-center justify-center ${discountType === "percentage" ? "border-coral-red bg-white" : "border-text-muted"}`}>
-                      {discountType === "percentage" && <div className="w-2 h-2 bg-coral-red" />}
+                    <div className={`w-5 h-5 border-4 flex items-center justify-center ${discountType === "percentage" ? "border-brand-green bg-white" : "border-text-muted"}`}>
+                      {discountType === "percentage" && <div className="w-2 h-2 bg-brand-green" />}
                     </div>
                     PERCENTAGE RULE
                   </button>
@@ -749,13 +763,13 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
                     type="button"
                     onClick={() => setDiscountType("fixed_amount")}
                     className={`flex-1 p-4 border-4 font-black uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-3 ${
-                      discountType === "fixed_amount" 
-                        ? "bg-text-main border-text-main text-white shadow-[4px_4px_0px_0px_var(--coral-red)] translate-x-[-2px] translate-y-[-2px]" 
+                      discountType === "fixed_amount"
+                        ? "bg-text-main border-text-main text-white shadow-[4px_4px_0px_0px_var(--brand-green)] translate-x-[-2px] translate-y-[-2px]"
                         : "bg-white border-border-strong text-text-muted hover:border-text-main"
                     }`}
                   >
-                    <div className={`w-5 h-5 border-4 flex items-center justify-center ${discountType === "fixed_amount" ? "border-coral-red bg-white" : "border-text-muted"}`}>
-                      {discountType === "fixed_amount" && <div className="w-2 h-2 bg-coral-red" />}
+                    <div className={`w-5 h-5 border-4 flex items-center justify-center ${discountType === "fixed_amount" ? "border-brand-green bg-white" : "border-text-muted"}`}>
+                      {discountType === "fixed_amount" && <div className="w-2 h-2 bg-brand-green" />}
                     </div>
                     FLAT INR VALUE
                   </button>
@@ -763,7 +777,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
               </div>
 
               {/* Operational Reduction */}
-              <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
+              <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
                 <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
                   Operational Reduction
                 </label>
@@ -784,7 +798,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
             </div>
             
             {/* Toggle Engine */}
-            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--border-strong)] relative z-10">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] relative z-10">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted xl:w-1/3">
                 Engine Status
               </label>
@@ -816,7 +830,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
             <button
               type="submit"
               disabled={submitting}
-              className="bg-text-main text-white font-black text-sm uppercase px-8 py-4 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--coral-red)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex-1 md:flex-none"
+              className="bg-[var(--footer-strip)] text-white font-black text-sm uppercase px-8 py-4 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--brand-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex-1 md:flex-none"
             >
               {submitting ? "Deploying..." : "[ Deploy New Discount Rule ]"}
             </button>
@@ -846,7 +860,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             {discounts.map((d) => (
-              <div key={d.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--border-strong)] relative overflow-hidden">
+              <div key={d.id} className="border-4 border-border-strong bg-bg-base flex flex-col shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
                   <span className="material-symbols-outlined text-[100px]">loyalty</span>
                 </div>
@@ -874,7 +888,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-text-muted uppercase font-bold">Reduction Value</span>
-                      <span className="font-black text-xl text-coral-red">
+                      <span className="font-black text-xl text-brand-green">
                         {d.discount_type === "percentage" ? `${d.value}%` : `₹${d.value.toFixed(2)}`}
                       </span>
                     </div>
@@ -902,7 +916,7 @@ function DiscountsTab({ filter }: { filter: ProjectFilterValue }) {
                       </label>
                     </div>
                     <div className="flex gap-4">
-                      <button onClick={() => overwriteDiscount(d.id)} className="bg-text-main text-white font-bold uppercase text-xs px-6 py-3 hover:bg-accent transition-colors flex-1">
+                      <button onClick={() => overwriteDiscount(d.id)} className="bg-[var(--footer-strip)] text-white font-bold uppercase text-xs px-6 py-3 hover:bg-accent transition-colors flex-1">
                         COMMIT OVERWRITE
                       </button>
                       <button onClick={() => setEditingId(null)} className="border-2 border-text-main text-text-main font-bold uppercase text-xs px-6 py-3 hover:bg-border-strong/10 transition-colors">

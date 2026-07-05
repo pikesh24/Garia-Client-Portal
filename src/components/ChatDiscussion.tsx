@@ -9,6 +9,7 @@ interface ChatDiscussionProps {
   setBody: (body: string) => void;
   sendMessage: () => void;
   sending: boolean;
+  readOnly?: boolean;
 }
 
 export function ChatDiscussion({
@@ -18,6 +19,7 @@ export function ChatDiscussion({
   setBody,
   sendMessage,
   sending,
+  readOnly = false,
 }: ChatDiscussionProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -35,14 +37,14 @@ export function ChatDiscussion({
   };
 
   return (
-    <div className="mt-8 border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--border-strong)] flex flex-col h-[500px]">
+    <div className="mt-8 border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--shadow-strong)] flex flex-col h-[500px]">
       {/* Header */}
       <div className="bg-bg-panel-alt border-b-4 border-border-strong px-5 py-4 flex items-center justify-between">
         <h4 className="font-label-caps text-label-caps uppercase tracking-widest text-text-main font-black flex items-center gap-3">
-          <span className="material-symbols-outlined text-coral-red">forum</span>
+          <span className="material-symbols-outlined text-brand-green">forum</span>
           Direct Comm Channel
         </h4>
-        <span className="font-data-mono text-[10px] text-coral-red bg-coral-red/10 px-2 py-1 border border-coral-red uppercase font-bold animate-pulse">
+        <span className="font-data-mono text-[10px] text-brand-green bg-brand-green/10 px-2 py-1 border border-brand-green uppercase font-bold animate-pulse">
           Live
         </span>
       </div>
@@ -64,9 +66,9 @@ export function ChatDiscussion({
                 <div
                   className={`max-w-[85%] relative group ${
                     isMine
-                      ? "bg-coral-red text-white border-coral-red"
+                      ? "bg-brand-green text-on-brand-green border-brand-green"
                       : "bg-bg-panel-alt text-text-main border-border-strong"
-                  } border-2 p-4 shadow-[4px_4px_0px_0px_var(--border-strong)] transition-transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_var(--border-strong)]`}
+                  } border-2 p-4 shadow-[4px_4px_0px_0px_var(--shadow-strong)] transition-transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_var(--shadow-strong)]`}
                   style={{
                     borderBottomRightRadius: isMine ? "0px" : "16px",
                     borderBottomLeftRadius: !isMine ? "0px" : "16px",
@@ -81,7 +83,7 @@ export function ChatDiscussion({
                   >
                     <span
                       className={`font-data-mono text-xs uppercase tracking-widest font-bold ${
-                        isMine ? "text-white" : "text-coral-red"
+                        isMine ? "text-on-brand-green" : "text-brand-green"
                       }`}
                     >
                       {m.sender_role}
@@ -109,26 +111,34 @@ export function ChatDiscussion({
       </div>
 
       {/* Input Area */}
-      <div className="bg-bg-panel-alt border-t-4 border-border-strong p-4 flex gap-3 items-end">
-        <Textarea
-          rows={1}
-          className="flex-1 max-h-32 shadow-[4px_4px_0px_0px_var(--border-strong)] py-3 px-4"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Transmit message... (Enter to send)"
-          style={{ minHeight: "52px", resize: "none" }}
-        />
-        <button
-          onClick={() => sendMessage()}
-          disabled={sending || !body.trim()}
-          className="bg-coral-red text-white h-[52px] px-6 border-2 border-border-strong flex items-center justify-center hover:bg-bg-panel-alt hover:text-coral-red transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[4px_4px_0px_0px_var(--border-strong)] active:translate-y-1 active:translate-x-1 active:shadow-none"
-        >
-          <span className={`material-symbols-outlined text-2xl ${sending ? "animate-spin" : ""}`}>
-            {sending ? "sync" : "send"}
-          </span>
-        </button>
-      </div>
+      {readOnly ? (
+        <div className="bg-bg-panel-alt border-t-4 border-border-strong p-4 text-center">
+          <p className="font-data-mono text-xs uppercase tracking-widest text-text-muted">
+            This discussion is closed and no longer accepts new messages.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-bg-panel-alt border-t-4 border-border-strong p-4 flex gap-3 items-end">
+          <Textarea
+            rows={1}
+            className="flex-1 max-h-32 shadow-[4px_4px_0px_0px_var(--shadow-strong)] py-3 px-4"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Transmit message... (Enter to send)"
+            style={{ minHeight: "52px", resize: "none" }}
+          />
+          <button
+            onClick={() => sendMessage()}
+            disabled={sending || !body.trim()}
+            className="bg-brand-green text-on-brand-green h-[52px] px-6 border-2 border-border-strong flex items-center justify-center hover:bg-bg-panel-alt hover:text-brand-green transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[4px_4px_0px_0px_var(--shadow-strong)] active:translate-y-1 active:translate-x-1 active:shadow-none"
+          >
+            <span className={`material-symbols-outlined text-2xl ${sending ? "animate-spin" : ""}`}>
+              {sending ? "sync" : "send"}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

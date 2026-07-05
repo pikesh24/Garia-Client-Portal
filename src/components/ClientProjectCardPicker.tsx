@@ -85,12 +85,12 @@ export function ClientProjectCardPicker({
 
                   <div className="relative z-10">
                     <div className="flex justify-between items-start mb-10">
-                      <div className="w-10 h-10 bg-coral-red border-2 border-border-strong flex items-center justify-center font-bold text-white shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
+                      <div className="w-10 h-10 bg-brand-green border-2 border-border-strong flex items-center justify-center font-bold text-on-brand-green shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
                         {initial}
                       </div>
                       <div
-                        className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase ${
-                          c.is_active ? "bg-forest-green text-white" : "bg-border-muted text-white"
+                        className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase text-white ${
+                          c.is_active ? "bg-brand-green" : "bg-coral-red"
                         }`}
                       >
                         {c.is_active ? "Active" : "Inactive"}
@@ -155,12 +155,12 @@ export function ClientProjectCardPicker({
 
                 <div className="relative z-10">
                   <div className="flex justify-between items-start mb-10">
-                    <div className="w-10 h-10 bg-coral-red border-2 border-border-strong flex items-center justify-center font-bold text-white shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
+                    <div className="w-10 h-10 bg-brand-green border-2 border-border-strong flex items-center justify-center font-bold text-on-brand-green shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
                       {p.name ? p.name[0].toUpperCase() : "?"}
                     </div>
                     <div
-                      className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase ${
-                        p.status === "active" ? "bg-forest-green text-white" : "bg-border-muted text-white"
+                      className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase text-white ${
+                        p.status === "active" ? "bg-brand-green" : "bg-coral-red"
                       }`}
                     >
                       {p.status === "active" ? "Active" : "Inactive"}

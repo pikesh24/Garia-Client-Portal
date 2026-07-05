@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/api";
 import { BusyRange, Meeting, MeetingBlock, MeetingType } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useProject } from "@/lib/project-context";
-import { PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader } from "@/components/ui";
 import { MeetingCalendarView, MeetingActions, BookableConfig, TimeRange } from "@/components/MeetingCalendar";
 
 const MIN_HOURS_AHEAD = 36;
@@ -31,14 +31,18 @@ export default function MeetingsPage() {
   const minInstant = useMemo(() => minBookableInstant(), []);
 
   async function load() {
-    if (!currentProject) return;
+    if (!currentProject) {
+      setLoading(false);
+      return;
+    }
     const data = await apiRequest<Meeting[]>(`/api/projects/${currentProject.id}/meetings`);
     setMeetings(data);
     setLoading(false);
   }
 
   async function loadBlocks() {
-    const data = await apiRequest<MeetingBlock[]>("/api/meetings/blocks");
+    if (!currentProject) return;
+    const data = await apiRequest<MeetingBlock[]>(`/api/projects/${currentProject.id}/meetings/blocks`);
     setBlocks(data);
   }
 
@@ -99,7 +103,9 @@ export default function MeetingsPage() {
     <div className="space-y-6">
       <PageHeader title="Meetings Calendar" />
 
-      {loading || !currentProject ? (
+      {!currentProject ? (
+        <EmptyState>No project assigned yet.</EmptyState>
+      ) : loading ? (
         <p className="text-text-muted">Loading...</p>
       ) : (
         <MeetingCalendarView

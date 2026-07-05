@@ -17,15 +17,20 @@ export default function ProjectFeaturesPage() {
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [challenging, setChallenging] = useState<FeatureRequest | null>(null);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    if (!currentProject) return;
+    if (!currentProject) {
+      setLoading(false);
+      return;
+    }
     const [featureData, serviceData] = await Promise.all([
       apiRequest<ProjectFeatures>(`/api/projects/${currentProject.id}/project-features`),
       apiRequest<InfrastructureCostEntry[]>(`/api/projects/${currentProject.id}/maintenance/infrastructure-costs`),
     ]);
     setFeatures(featureData);
     setServices(serviceData);
+    setLoading(false);
     if (challenging) {
       const updated = [...featureData.base_features, ...featureData.extra_features].find(
         (f) => f.id === challenging.id
@@ -39,9 +44,10 @@ export default function ProjectFeaturesPage() {
   }, [currentProject?.id]);
 
   async function approve(fr: FeatureRequest) {
+    if (!currentProject) return;
     setError(null);
     try {
-      await apiRequest(`/api/feature-requests/${fr.id}/approve`, {
+      await apiRequest(`/api/projects/${currentProject.id}/feature-requests/${fr.id}/approve`, {
         method: "POST",
       });
       await load();
@@ -51,9 +57,10 @@ export default function ProjectFeaturesPage() {
   }
 
   async function decline(fr: FeatureRequest) {
+    if (!currentProject) return;
     setError(null);
     try {
-      await apiRequest(`/api/feature-requests/${fr.id}/decline-base-feature`, {
+      await apiRequest(`/api/projects/${currentProject.id}/feature-requests/${fr.id}/decline-base-feature`, {
         method: "POST",
       });
       await load();
@@ -63,9 +70,10 @@ export default function ProjectFeaturesPage() {
   }
 
   async function openChallenge(fr: FeatureRequest) {
+    if (!currentProject) return;
     setError(null);
     try {
-      await apiRequest(`/api/feature-requests/${fr.id}/challenge`, { method: "POST" });
+      await apiRequest(`/api/projects/${currentProject.id}/feature-requests/${fr.id}/challenge`, { method: "POST" });
       await load();
       setChallenging(fr);
     } catch (err) {
@@ -78,18 +86,25 @@ export default function ProjectFeaturesPage() {
     const needsApproval =
       fr.is_base_feature && !fr.base_feature_activated && fr.status !== "declined";
     const challengeOpen = fr.challenge_status === "open";
+    const challengeDecided = fr.challenge_status === "approved" || fr.challenge_status === "denied";
 
     return (
-      <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-8 shadow-[8px_8px_0px_0px_var(--border-strong)] relative transition-all mb-8">
+      <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative transition-all mb-8">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 border-b-2 border-border-strong pb-6">
           <div>
             <div className="flex items-center gap-3 mb-3">
               <span className="font-data-mono text-xs uppercase tracking-widest text-text-muted bg-bg-panel-alt px-2 py-1 border border-border-strong">
                 ID: #{fr.id} {fr.feature_id ? `· ${fr.feature_id}` : ""}
               </span>
-              <StatusBadge status={needsApproval ? "pending" : fr.status} />
+              <span className="flex items-center gap-1.5">
+                <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Status:</span>
+                <StatusBadge status={needsApproval ? "pending" : fr.status} />
+              </span>
               {fr.is_base_feature && fr.challenge_status !== "none" && (
-                <StatusBadge status={fr.challenge_status} />
+                <span className="flex items-center gap-1.5">
+                  <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Challenge:</span>
+                  <StatusBadge status={fr.challenge_status} />
+                </span>
               )}
             </div>
             <h4 className="font-headline-lg text-2xl font-black uppercase text-text-main leading-tight mb-2">
@@ -112,7 +127,7 @@ export default function ProjectFeaturesPage() {
           </div>
           <div>
             <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Price</div>
-            <div className="font-data-mono text-sm text-coral-red font-bold">{fr.price != null ? formatINR(fr.price) : "—"}</div>
+            <div className="font-data-mono text-sm text-brand-green font-bold">{fr.price != null ? formatINR(fr.price) : "—"}</div>
           </div>
         </div>
 
@@ -128,7 +143,7 @@ export default function ProjectFeaturesPage() {
                     <div className="font-bold text-sm text-text-main">{s.module}</div>
                     {s.description && <div className="text-xs text-text-muted mt-1">{s.description}</div>}
                   </div>
-                  <div className="font-data-mono text-xs text-coral-red font-bold shrink-0 text-right">
+                  <div className="font-data-mono text-xs text-brand-green font-bold shrink-0 text-right">
                     {formatINR(s.monthly_overhead_price)}<span className="text-[10px] text-text-muted block md:inline md:ml-1">/mo</span>
                   </div>
                 </div>
@@ -137,28 +152,42 @@ export default function ProjectFeaturesPage() {
           </div>
         )}
 
-        {fr.is_base_feature && (
+        {fr.is_base_feature && !needsApproval && (
           <div className="mt-6 border-t-2 border-dashed border-border-strong pt-4 flex items-center gap-3">
             <Button
               variant="secondary"
-              onClick={() => (challengeOpen ? setChallenging(fr) : openChallenge(fr))}
+              onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
             >
-              {challengeOpen ? "View Challenge" : "Challenge"}
+              {challengeOpen || challengeDecided ? "View Challenge" : "Challenge"}
             </Button>
           </div>
         )}
 
         {needsApproval && (
-          <div className="mt-6 border-4 border-coral-red bg-coral-red/5 p-6 shadow-[4px_4px_0px_0px_var(--coral-red)]">
-            <p className="text-sm font-bold text-coral-red mb-2 uppercase tracking-widest flex items-center gap-2">
+          <div className="mt-6 border-4 border-brand-green bg-brand-green/5 p-6 shadow-[4px_4px_0px_0px_var(--brand-green)]">
+            <p className="text-sm font-bold text-brand-green mb-2 uppercase tracking-widest flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">warning</span>
               Approval Required
             </p>
             <p className="text-sm text-text-main mb-4 font-bold">
               This feature requires your review. Approve to accept the stated hours and scope, or decline it.
             </p>
+            {fr.is_base_feature && (
+              <p className="text-xs text-text-muted mb-4">
+                Not sure about the scope, hours, or price? Use Challenge to open a discussion with the admin before
+                deciding — it doesn&apos;t approve or decline the feature, it just lets you raise questions first.
+              </p>
+            )}
             <div className="flex items-center gap-4">
               <Button onClick={() => approve(fr)}>Approve Feature</Button>
+              {fr.is_base_feature && (
+                <Button
+                  variant="secondary"
+                  onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
+                >
+                  {challengeOpen || challengeDecided ? "View Challenge" : "Challenge"}
+                </Button>
+              )}
               <Button variant="danger" onClick={() => decline(fr)}>
                 Decline Feature
               </Button>
@@ -169,7 +198,16 @@ export default function ProjectFeaturesPage() {
     );
   }
 
-  if (!currentProject || !features) return <p className="text-text-muted">Loading...</p>;
+  if (!currentProject) {
+    return (
+      <div className="space-y-12">
+        <PageHeader title="Project Features Overview" />
+        <EmptyState>No project assigned yet.</EmptyState>
+      </div>
+    );
+  }
+
+  if (loading || !features) return <p className="text-text-muted">Loading...</p>;
 
   return (
     <div className="space-y-12">
@@ -202,16 +240,25 @@ export default function ProjectFeaturesPage() {
         )}
       </div>
 
-      {challenging && <ChallengeModal featureRequest={challenging} onClose={() => setChallenging(null)} onChanged={load} />}
+      {challenging && (
+        <ChallengeModal
+          projectId={currentProject.id}
+          featureRequest={challenging}
+          onClose={() => setChallenging(null)}
+          onChanged={load}
+        />
+      )}
     </div>
   );
 }
 
 function ChallengeModal({
+  projectId,
   featureRequest,
   onClose,
   onChanged,
 }: {
+  projectId: number;
   featureRequest: FeatureRequest;
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -224,7 +271,7 @@ function ChallengeModal({
   async function loadMessages() {
     try {
       const data = await apiRequest<FeatureRequestMessage[]>(
-        `/api/feature-requests/${featureRequest.id}/challenge-messages`
+        `/api/projects/${projectId}/feature-requests/${featureRequest.id}/challenge-messages`
       );
       setMessages(data);
     } catch (err) {
@@ -242,7 +289,7 @@ function ChallengeModal({
     setError(null);
     try {
       const message = await apiRequest<FeatureRequestMessage>(
-        `/api/feature-requests/${featureRequest.id}/challenge-messages`,
+        `/api/projects/${projectId}/feature-requests/${featureRequest.id}/challenge-messages`,
         { method: "POST", body: { body } }
       );
       setMessages((prev) => [...prev, message]);
@@ -273,6 +320,7 @@ function ChallengeModal({
           setBody={setBody}
           sendMessage={sendMessage}
           sending={sending}
+          readOnly={featureRequest.challenge_status !== "open"}
         />
       </div>
     </Modal>

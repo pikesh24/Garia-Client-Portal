@@ -42,13 +42,16 @@ function generateWeekDays(viewDate: Date): Date[] {
   return days;
 }
 
+// Meetings can only run between 9 AM and 9 PM, so the last selectable slot is 21:00
+// itself (as an end time) — no 21:30+ starts, since those could never fit before 9 PM.
 const TIME_SLOTS: string[] = (() => {
   const slots: string[] = [];
-  for (let h = 0; h < 24; h++) {
+  for (let h = 9; h < 21; h++) {
     for (const m of [0, 30]) {
       slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
     }
   }
+  slots.push("21:00");
   return slots;
 })();
 
@@ -121,7 +124,7 @@ export function MiniCalendar({
         <button
           type="button"
           onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}
-          className="px-2 py-1 font-data-mono text-data-mono text-text-main hover:text-coral-red"
+          className="px-2 py-1 font-data-mono text-data-mono text-text-main hover:text-brand-green"
         >
           &lt;
         </button>
@@ -129,7 +132,7 @@ export function MiniCalendar({
         <button
           type="button"
           onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))}
-          className="px-2 py-1 font-data-mono text-data-mono text-text-main hover:text-coral-red"
+          className="px-2 py-1 font-data-mono text-data-mono text-text-main hover:text-brand-green"
         >
           &gt;
         </button>
@@ -153,8 +156,8 @@ export function MiniCalendar({
               disabled={disabled}
               onClick={() => onChange(date)}
               className={`h-8 w-8 border font-data-mono text-xs transition-colors
-                ${disabled ? "border-transparent text-text-muted opacity-40" : "border-transparent text-text-main hover:border-coral-red"}
-                ${selected ? "bg-coral-red border-coral-red text-white" : ""}`}
+                ${disabled ? "border-transparent text-text-muted opacity-40" : "border-transparent text-text-main hover:border-brand-green"}
+                ${selected ? "bg-brand-green border-brand-green text-on-brand-green" : ""}`}
             >
               {date.getDate()}
             </button>
@@ -194,8 +197,8 @@ export function TimeSlotPicker({
             onClick={() => onChange(slot)}
             title={disabled && !(candidate < minDateTime) ? "Unavailable — overlaps another appointment" : undefined}
             className={`border-2 px-2 py-2 font-data-mono text-sm font-bold tabular-nums transition-all
-              ${disabled ? "border-border-subtle text-text-muted opacity-40 cursor-not-allowed" : "border-border-strong text-text-main hover:border-coral-red"}
-              ${selected ? "bg-coral-red text-white border-coral-red shadow-[3px_3px_0px_0px_var(--border-strong)]" : "bg-bg-panel-alt"}`}
+              ${disabled ? "border-border-subtle text-text-muted opacity-40 cursor-not-allowed" : "border-border-strong text-text-main hover:border-brand-green"}
+              ${selected ? "bg-brand-green text-on-brand-green border-brand-green shadow-[3px_3px_0px_0px_var(--shadow-strong)]" : "bg-bg-panel-alt"}`}
           >
             {slotLabel(slot)}
           </button>
@@ -231,7 +234,7 @@ function MeetingTypeToggle({
           title={!opt.allowed ? "Not currently available" : undefined}
           className={`px-5 py-2 font-label-caps text-[11px] uppercase tracking-[0.1em] transition-all
             ${opt.allowed ? "" : "opacity-40 cursor-not-allowed"}
-            ${value === opt.key && opt.allowed ? "bg-coral-red text-white" : "bg-bg-panel-alt text-text-main hover:bg-bg-panel-alt/70"}`}
+            ${value === opt.key && opt.allowed ? "bg-brand-green text-on-brand-green" : "bg-bg-panel-alt text-text-main hover:bg-bg-panel-alt/70"}`}
         >
           {opt.label}
         </button>
@@ -285,6 +288,20 @@ function TimeRangePicker({
       <Label>
         {!startSlot ? "Select Start Time" : !endSlot ? "Now Select End Time" : "Time Range Selected"}
       </Label>
+      <p className="mb-3 font-data-mono text-xs text-text-muted">
+        Tap a slot to set the start time, then tap a later slot to set the end time.
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-4 font-data-mono text-[11px] text-text-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 border border-border-strong bg-brand-green" /> Start
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 border border-brand-green/40 bg-brand-green/15" /> In between
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 border border-border-strong bg-[#0d9488]" /> End
+        </span>
+      </div>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {TIME_SLOTS.map((slot) => {
           const candidate = slotToDate(date, slot);
@@ -299,9 +316,9 @@ function TimeRangePicker({
             slotToDate(date, slot) < slotToDate(date, endSlot);
 
           let style = "bg-bg-panel-alt";
-          if (isStart) style = "bg-coral-red text-white border-coral-red shadow-[3px_3px_0px_0px_var(--border-strong)]";
-          else if (isEnd) style = "bg-[#1E8A4F] text-white border-[#1E8A4F] shadow-[3px_3px_0px_0px_var(--border-strong)]";
-          else if (isInRange) style = "bg-coral-red/15 border-coral-red/40 text-coral-red";
+          if (isStart) style = "bg-brand-green text-on-brand-green border-brand-green shadow-[3px_3px_0px_0px_var(--shadow-strong)]";
+          else if (isEnd) style = "bg-[#0d9488] text-white border-[#0d9488] shadow-[3px_3px_0px_0px_var(--shadow-strong)]";
+          else if (isInRange) style = "bg-brand-green/15 border-brand-green/40 text-brand-green";
 
           return (
             <button
@@ -319,7 +336,7 @@ function TimeRangePicker({
                       : undefined
               }
               className={`border-2 px-2 py-2 font-data-mono text-sm font-bold tabular-nums transition-all
-                ${disabled ? "border-border-subtle text-text-muted opacity-40 cursor-not-allowed" : "border-border-strong text-text-main hover:border-coral-red"}
+                ${disabled ? "border-border-subtle text-text-muted opacity-40 cursor-not-allowed" : "border-border-strong text-text-main hover:border-brand-green"}
                 ${style}`}
             >
               {slotLabel(slot)}
@@ -329,9 +346,9 @@ function TimeRangePicker({
       </div>
       {startSlot && endSlot && (
         <p className="mt-3 font-data-mono text-sm text-text-main">
-          <span className="text-coral-red font-bold">{slotLabel(startSlot)}</span>
+          <span className="text-brand-green font-bold">{slotLabel(startSlot)}</span>
           <span className="text-text-muted mx-2">→</span>
-          <span className="text-[#1E8A4F] font-bold">{slotLabel(endSlot)}</span>
+          <span className="text-[#0d9488] font-bold">{slotLabel(endSlot)}</span>
         </p>
       )}
     </Field>
@@ -447,23 +464,23 @@ export function MeetingCalendarView({
               key={v}
               onClick={() => setView(v)}
               className={`border-2 px-4 py-2 font-label-caps text-[11px] uppercase tracking-[0.1em] transition-all
-                ${view === v ? "bg-coral-red text-white border-border-strong" : "border-border-subtle text-text-muted hover:text-text-main"}`}
+                ${view === v ? "bg-brand-green text-on-brand-green border-border-strong" : "border-border-subtle text-text-muted hover:text-text-main"}`}
             >
               {v}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("prev")} className="px-2 font-data-mono text-text-main hover:text-coral-red">
+          <button onClick={() => navigate("prev")} className="px-2 font-data-mono text-text-main hover:text-brand-green">
             &lt;
           </button>
           <span className="w-56 text-center font-data-mono text-data-mono uppercase text-text-main">{rangeLabel()}</span>
-          <button onClick={() => navigate("next")} className="px-2 font-data-mono text-text-main hover:text-coral-red">
+          <button onClick={() => navigate("next")} className="px-2 font-data-mono text-text-main hover:text-brand-green">
             &gt;
           </button>
           <button
             onClick={() => setCurrentDate(new Date())}
-            className="border-2 border-border-strong px-3 py-1 font-data-mono text-xs uppercase text-text-main hover:border-coral-red"
+            className="border-2 border-border-strong px-3 py-1 font-data-mono text-xs uppercase text-text-main hover:border-brand-green"
           >
             Today
           </button>
@@ -471,7 +488,7 @@ export function MeetingCalendarView({
       </div>
 
       {view === "month" && (
-        <div className="border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--border-strong)]">
+        <div className="border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
           <div className="grid grid-cols-7 border-b-4 border-border-strong">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
               <div key={d} className="p-2 text-center font-label-caps text-[11px] uppercase tracking-[0.1em] text-text-inverse">
@@ -488,8 +505,8 @@ export function MeetingCalendarView({
               const bookableDay = isBookableDay(date);
               return (
                 <div key={i} className={`min-h-[110px] p-2 ${inMonth ? "bg-bg-panel-alt" : "bg-bg-panel-alt opacity-40"}`}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <div className={`inline-flex h-6 w-6 items-center justify-center font-data-mono text-xs ${isToday ? "bg-coral-red text-white" : "text-text-main"}`}>
+                  <div className="mb-2 flex items-center justify-between border-b-2 border-border-subtle pb-1.5">
+                    <div className={`inline-flex h-7 w-7 items-center justify-center font-data-mono text-sm font-black ${isToday ? "bg-brand-green text-on-brand-green" : "border-2 border-border-strong text-text-main"}`}>
                       {date.getDate()}
                     </div>
                     {bookableDay && (
@@ -523,7 +540,7 @@ export function MeetingCalendarView({
                       </button>
                     ))}
                     {dayMeetings.length > 3 && (
-                      <div className="font-data-mono text-[10px] text-coral-red">+{dayMeetings.length - 3} more</div>
+                      <div className="font-data-mono text-[10px] text-brand-green">+{dayMeetings.length - 3} more</div>
                     )}
                   </div>
                 </div>
@@ -534,14 +551,14 @@ export function MeetingCalendarView({
       )}
 
       {view === "week" && (
-        <div className="border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--border-strong)]">
+        <div className="border-4 border-border-strong bg-bg-panel shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
           <div className="grid grid-cols-7 border-b-4 border-border-strong">
             {weekDays.map((date, i) => (
               <div key={i} className="p-2 text-center">
                 <div className="font-label-caps text-[10px] uppercase text-text-inverse opacity-70">
                   {date.toLocaleDateString("en-US", { weekday: "short" })}
                 </div>
-                <div className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center font-data-mono text-sm ${isSameDay(date, today) ? "bg-coral-red text-white" : "text-text-inverse"}`}>
+                <div className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center font-data-mono text-base font-black ${isSameDay(date, today) ? "bg-brand-green text-on-brand-green" : "border-2 border-text-inverse/40 text-text-inverse"}`}>
                   {date.getDate()}
                 </div>
               </div>
@@ -588,7 +605,7 @@ export function MeetingCalendarView({
       )}
 
       {view === "day" && (
-        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--border-strong)]">
+        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
           <div className="flex items-center justify-between border-b-4 border-border-strong bg-bg-panel p-4">
             <h3 className="font-label-caps text-label-caps uppercase tracking-[0.1em] text-text-inverse">
               {currentDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
@@ -921,7 +938,7 @@ export function MeetingDetailsModal({
         </p>
         <p className="text-sm text-text-muted">{meeting.agenda}</p>
         {meeting.meeting_link && meeting.status === "confirmed" && (
-          <a href={meeting.meeting_link} target="_blank" className="block font-data-mono text-sm text-coral-red underline">
+          <a href={meeting.meeting_link} target="_blank" className="block font-data-mono text-sm text-brand-green underline">
             Join meeting link
           </a>
         )}

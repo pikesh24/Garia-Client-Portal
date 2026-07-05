@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { User } from "@/lib/types";
-import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Label, PageHeader } from "@/components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Label, PageHeader, Toggle } from "@/components/ui";
+import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
+import { useConfirm } from "@/lib/confirm";
 
 export default function AdminClientDetailPage() {
   const params = useParams<{ id: string }>();
@@ -13,6 +15,7 @@ export default function AdminClientDetailPage() {
   const [client, setClient] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     apiRequest<User>(`/api/admin/users/${params.id}`).then(setClient);
@@ -51,7 +54,13 @@ export default function AdminClientDetailPage() {
   }
 
   async function purge() {
-    if (!confirm("Permanently delete this client and all associated data? This cannot be undone.")) return;
+    const ok = await confirm({
+      title: "Confirm Deletion",
+      message: "Permanently delete this client and all associated data? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await apiRequest(`/api/admin/users/${client!.id}`, { method: "DELETE" });
     router.push("/admin/users");
   }
@@ -95,11 +104,11 @@ export default function AdminClientDetailPage() {
               />
             </Field>
             <Field>
-              <Label className="flex items-center gap-2">Can Book Offline Meetings</Label>
-              <input
-                type="checkbox"
+              <Label>Can Book Offline Meetings</Label>
+              <Toggle
                 checked={client.can_book_offline_meeting}
-                onChange={(e) => setClient({ ...client, can_book_offline_meeting: e.target.checked })}
+                onChange={(next) => setClient({ ...client, can_book_offline_meeting: next })}
+                label={client.can_book_offline_meeting ? "Enabled" : "Disabled"}
               />
             </Field>
             <Field>
@@ -136,10 +145,9 @@ export default function AdminClientDetailPage() {
             </Field>
             <Field>
               <Label>Project Start Date</Label>
-              <Input
-                type="date"
+              <BrutalistDatePicker
                 value={client.project_start_date ?? ""}
-                onChange={(e) => setClient({ ...client, project_start_date: e.target.value || null })}
+                onChange={(val) => setClient({ ...client, project_start_date: val || null })}
               />
             </Field>
 

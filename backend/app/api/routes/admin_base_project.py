@@ -85,18 +85,23 @@ def update_base_feature_details(
 ):
     project = _get_project_or_404(project_id, db)
     fr = _get_entry_or_404(project_id, feature_request_id, db)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    scope_fields = {"quoted_frontend_hours", "quoted_backend_hours", "quoted_production_hours"}
+    scope_changed = any(field in updates and updates[field] != getattr(fr, field) for field in scope_fields)
+
+    for field, value in updates.items():
         setattr(fr, field, value)
     fr.price = compute_feature_price(
         project.client, fr.quoted_frontend_hours, fr.quoted_backend_hours, fr.quoted_production_hours
     )
 
-    # The admin changed the scope of an already-approved feature — the client must sign off again.
-    if fr.is_base_feature:
-        if fr.base_feature_activated:
-            fr.base_feature_activated = False
-        fr.status = FeatureRequestStatus.UNDER_REVIEW
-    elif fr.status == FeatureRequestStatus.APPROVED:
+    # Base features need the client to sign off again when the admin changes their hours/price,
+    # since base_feature_activated represents the client's contractual agreement to that scope.
+    # Extra (client-requested) features work differently: "approved" there just means the admin
+    # accepted the client's request, which the admin is the one editing here — no need to send
+    # it back through that separate approval step for a hours/price tweak they made themselves.
+    if scope_changed and fr.is_base_feature:
+        fr.base_feature_activated = False
         fr.status = FeatureRequestStatus.UNDER_REVIEW
 
     db.commit()

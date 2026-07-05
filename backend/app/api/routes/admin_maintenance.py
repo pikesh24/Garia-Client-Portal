@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.maintenance import (
     InfrastructureCostEntryCreateRequest,
     InfrastructureCostEntryOut,
+    InfrastructureCostEntryUpdateRequest,
     MaintenanceCycleCreateRequest,
     MaintenanceRecordOut,
     MaintenanceRejectRequest,
@@ -173,6 +174,20 @@ def create_infra_cost(payload: InfrastructureCostEntryCreateRequest, db: Session
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client has no project")
     entry = InfrastructureCostEntry(**payload.model_dump(), project_id=project.id)
     db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.patch("/infrastructure-costs/{entry_id}", response_model=InfrastructureCostEntryOut)
+def update_infra_cost(entry_id: int, payload: InfrastructureCostEntryUpdateRequest, db: Session = Depends(get_db)):
+    entry = db.get(InfrastructureCostEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    entry.module = payload.module
+    entry.description = payload.description
+    entry.billing_type = payload.billing_type
+    entry.monthly_overhead_price = payload.monthly_overhead_price
     db.commit()
     db.refresh(entry)
     return entry

@@ -21,7 +21,7 @@ from app.schemas.meeting import (
     MeetingReschedulePropose,
 )
 from app.services.email import notify_meeting_event
-from app.services.meeting_conflicts import find_conflict_reason, list_busy_ranges
+from app.services.meeting_conflicts import ensure_business_hours, find_conflict_reason, list_busy_ranges
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/meetings", tags=["meetings"], dependencies=[Depends(require_client)]
@@ -80,6 +80,7 @@ def request_meeting(
         raise BusinessRuleViolation("This account is not authorized to book offline meetings")
 
     _ensure_future_window(payload.pending_start_datetime)
+    ensure_business_hours(payload.pending_start_datetime, payload.pending_end_datetime)
 
     conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime)
     if conflict:
@@ -138,6 +139,7 @@ def propose_reschedule(
     if meeting.status != MeetingStatus.CONFIRMED:
         raise BusinessRuleViolation("Only a confirmed meeting can have a reschedule proposed")
     _ensure_after_confirmed(payload.pending_start_datetime, meeting.confirmed_end_datetime)
+    ensure_business_hours(payload.pending_start_datetime, payload.pending_end_datetime)
 
     conflict = find_conflict_reason(db, payload.pending_start_datetime, payload.pending_end_datetime, exclude_meeting_id=meeting.id)
     if conflict:

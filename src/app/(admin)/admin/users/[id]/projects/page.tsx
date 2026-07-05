@@ -47,7 +47,7 @@ export default function AdminClientProjectsPage() {
       />
 
       {showForm && (
-        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--border-strong)] p-6 md:p-8">
+        <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-6 md:p-8">
           <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
             Create Project
           </h3>
@@ -76,14 +76,14 @@ export default function AdminClientProjectsPage() {
             const watermark = String.fromCharCode(65 + (index % 26));
             return (
               <Link key={p.id} href={`/admin/users/${params.id}/projects/${p.id}`} className="group block h-full">
-                <div className="relative overflow-hidden bg-bg-panel-alt border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)] transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_var(--border-strong)] h-full flex flex-col p-6">
+                <div className="relative overflow-hidden bg-bg-panel-alt border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--shadow-strong)] transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)] h-full flex flex-col p-6">
                   <div className="absolute bottom-2 right-6 text-[100px] font-black text-border-strong/10 select-none z-0 leading-none pointer-events-none">
                     {watermark}
                   </div>
 
                   <div className="relative z-10">
                     <div className="flex justify-between items-start mb-10">
-                      <div className="w-10 h-10 bg-coral-red border-2 border-border-strong flex items-center justify-center font-bold text-white shadow-[3px_3px_0px_0px_var(--border-strong)] text-xl">
+                      <div className="w-10 h-10 bg-brand-green border-2 border-border-strong flex items-center justify-center font-bold text-on-brand-green shadow-[3px_3px_0px_0px_var(--shadow-strong)] text-xl">
                         {p.name ? p.name[0].toUpperCase() : "?"}
                       </div>
                       <div className={`px-2 py-1 text-[10px] font-bold tracking-widest uppercase ${p.status === "active" ? "bg-forest-green text-white" : "bg-border-muted text-white"}`}>
