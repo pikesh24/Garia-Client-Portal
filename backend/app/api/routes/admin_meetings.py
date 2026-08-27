@@ -4,15 +4,17 @@ from datetime import datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin_or_developer
 from app.core.exceptions import BusinessRuleViolation
 from app.db.session import get_db
-from app.models.enums import MeetingStatus, ProposedBy
+from app.models.enums import MeetingStatus, MeetingType, ProposedBy
 from app.models.meeting import Meeting
 from app.models.meeting_block import MeetingBlock
+from app.models.recurring_meeting_block import RecurringMeetingBlock
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.meeting import (
+    BlockedDateOut,
     BusyRangeOut,
     MeetingBlockCreateRequest,
     MeetingBlockOut,
@@ -20,16 +22,25 @@ from app.schemas.meeting import (
     MeetingDenyRequest,
     MeetingOut,
     MeetingReschedulePropose,
+    RecurringMeetingBlockCreateRequest,
+    RecurringMeetingBlockOut,
 )
 from app.services.email import notify_meeting_event
-from app.services.meeting_conflicts import ensure_business_hours, find_conflict_reason, list_busy_ranges
+from app.services.realtime import manager
+from app.services.meeting_conflicts import (
+    blocked_dates_in_range,
+    ensure_business_hours,
+    find_conflict_reason,
+    find_future_meetings_matching_rule,
+    list_busy_ranges,
+)
 
-router = APIRouter(prefix="/api/admin/meetings", tags=["admin-meetings"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/admin/meetings", tags=["admin-meetings"], dependencies=[Depends(require_admin_or_developer)])
 
 project_scoped_router = APIRouter(
     prefix="/api/admin/projects/{project_id}/meetings",
     tags=["admin-meetings"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 
@@ -52,8 +63,50 @@ def get_busy_ranges(
 ):
     day_start = datetime.combine(date, time.min, tzinfo=timezone.utc)
     day_end = datetime.combine(date, time.max, tzinfo=timezone.utc)
-    ranges = list_busy_ranges(db, day_start, day_end, exclude_meeting_id=exclude_meeting_id)
+    ranges = list_busy_ranges(db, day_start, day_end, exclude_meeting_id=exclude_meeting_id, check_date=date)
     return [BusyRangeOut(start_datetime=s, end_datetime=e) for s, e in ranges]
+
+
+@router.get("/blocked-dates", response_model=list[BlockedDateOut])
+def get_blocked_dates(
+    range_start: date_type = Query(...), range_end: date_type = Query(...), db: Session = Depends(get_db)
+):
+    if range_end < range_start:
+        raise BusinessRuleViolation("range_end must not be before range_start")
+    if (range_end - range_start).days > 400:
+        raise BusinessRuleViolation("Range too large")
+    return [BlockedDateOut(date=d, reason=r) for d, r in blocked_dates_in_range(db, range_start, range_end)]
+
+
+@router.get("/recurring-blocks", response_model=list[RecurringMeetingBlockOut])
+def list_recurring_blocks(db: Session = Depends(get_db)):
+    return db.query(RecurringMeetingBlock).order_by(RecurringMeetingBlock.created_at.desc()).all()
+
+
+@router.post("/recurring-blocks/preview-conflicts", response_model=list[MeetingOut])
+def preview_recurring_block_conflicts(payload: RecurringMeetingBlockCreateRequest, db: Session = Depends(get_db)):
+    rule = RecurringMeetingBlock(**payload.model_dump())
+    return find_future_meetings_matching_rule(db, rule)
+
+
+@router.post("/recurring-blocks", response_model=RecurringMeetingBlockOut, status_code=201)
+def create_recurring_block(payload: RecurringMeetingBlockCreateRequest, db: Session = Depends(get_db)):
+    rule = RecurringMeetingBlock(**payload.model_dump())
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    manager.broadcast_change("meetings")
+    return rule
+
+
+@router.delete("/recurring-blocks/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_recurring_block(rule_id: int, db: Session = Depends(get_db)):
+    rule = db.get(RecurringMeetingBlock, rule_id)
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring block not found")
+    db.delete(rule)
+    db.commit()
+    manager.broadcast_change("meetings")
 
 
 @router.get("/blocks", response_model=list[MeetingBlockOut])
@@ -70,6 +123,7 @@ def create_block(payload: MeetingBlockCreateRequest, db: Session = Depends(get_d
     db.add(block)
     db.commit()
     db.refresh(block)
+    manager.broadcast_change("meetings")
     return block
 
 
@@ -80,6 +134,7 @@ def delete_block(block_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Block not found")
     db.delete(block)
     db.commit()
+    manager.broadcast_change("meetings")
 
 
 @router.get("", response_model=list[MeetingOut])
@@ -116,6 +171,7 @@ def _notify_client(db: Session, meeting: Meeting, event: str) -> None:
     client = db.get(User, meeting.client_id)
     if client:
         notify_meeting_event(client.email, meeting.id, event)
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
 
 
 @router.patch("/{meeting_id}/confirm", response_model=MeetingOut)
@@ -132,7 +188,16 @@ def confirm_meeting(
     if not (is_initial_request or is_client_reschedule):
         raise BusinessRuleViolation("There is no pending client request to confirm")
 
-    meeting.meeting_link = payload.meeting_link
+    if meeting.meeting_type == MeetingType.ONLINE:
+        if not payload.meeting_link:
+            raise BusinessRuleViolation("A meeting link is required to confirm an online meeting")
+        if not payload.meeting_code:
+            raise BusinessRuleViolation("A meeting code is required to confirm an online meeting")
+        meeting.meeting_link = payload.meeting_link
+        meeting.meeting_code = payload.meeting_code
+    else:
+        meeting.meeting_link = None
+        meeting.meeting_code = None
     meeting.confirmed_start_datetime = meeting.pending_start_datetime
     meeting.confirmed_end_datetime = meeting.pending_end_datetime
     meeting.pending_proposed_by = None
@@ -205,8 +270,10 @@ def propose_reschedule(
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_meeting(meeting_id: int, db: Session = Depends(get_db)):
     meeting = _get_meeting_or_404(meeting_id, db)
+    client_id = meeting.client_id
     db.delete(meeting)
     db.commit()
+    manager.broadcast_change("meetings", client_id=client_id)
 
 
 @project_scoped_router.patch("/{meeting_id}/confirm", response_model=MeetingOut)
@@ -224,7 +291,16 @@ def confirm_project_meeting(
     if not (is_initial_request or is_client_reschedule):
         raise BusinessRuleViolation("There is no pending client request to confirm")
 
-    meeting.meeting_link = payload.meeting_link
+    if meeting.meeting_type == MeetingType.ONLINE:
+        if not payload.meeting_link:
+            raise BusinessRuleViolation("A meeting link is required to confirm an online meeting")
+        if not payload.meeting_code:
+            raise BusinessRuleViolation("A meeting code is required to confirm an online meeting")
+        meeting.meeting_link = payload.meeting_link
+        meeting.meeting_code = payload.meeting_code
+    else:
+        meeting.meeting_link = None
+        meeting.meeting_code = None
     meeting.confirmed_start_datetime = meeting.pending_start_datetime
     meeting.confirmed_end_datetime = meeting.pending_end_datetime
     meeting.pending_proposed_by = None
@@ -299,5 +375,7 @@ def propose_project_reschedule(
 @project_scoped_router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project_meeting(project_id: int, meeting_id: int, db: Session = Depends(get_db)):
     meeting = _get_project_meeting_or_404(project_id, meeting_id, db)
+    client_id = meeting.client_id
     db.delete(meeting)
     db.commit()
+    manager.broadcast_change("meetings", client_id=client_id)

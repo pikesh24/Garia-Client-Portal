@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { UserRole } from "@/lib/types";
 
 const THEME_KEY = "garia_theme";
+const PORTAL_LABEL: Record<UserRole, string> = { admin: "ADMIN PORTAL", client: "CLIENT PORTAL", developer: "DEVELOPER PORTAL" };
+const PROFILE_PATH: Record<UserRole, string> = { admin: "/admin/profile", client: "/profile", developer: "/developer/profile" };
 
 export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
   const { user, logout } = useAuth();
@@ -27,7 +30,7 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
     <header className="hidden md:flex fixed top-0 right-0 w-[calc(100%-16rem)] h-16 border-b-4 border-border-strong bg-bg-base justify-between items-center px-gutter z-40">
       <div className="flex items-center gap-8">
         <span className="font-headline-lg text-headline-lg font-black text-brand-green tracking-tighter uppercase">
-          {user?.role === "admin" ? "ADMIN PORTAL" : "CLIENT PORTAL"}
+          {user ? PORTAL_LABEL[user.role] : ""}
         </span>
         <div className="flex items-center gap-4 border-l-2 border-border-strong pl-8">
           <span className="font-data-mono text-data-mono uppercase tracking-widest text-brand-green font-bold">
@@ -55,7 +58,7 @@ export function Header({ breadcrumbs }: { breadcrumbs: string[] }) {
                 <button
                   onClick={() => {
                     setOpen(false);
-                    router.push(user?.role === "admin" ? "/admin/profile" : "/profile");
+                    router.push(user ? PROFILE_PATH[user.role] : "/profile");
                   }}
                   className="block w-full px-5 py-3 text-left font-label-caps text-label-caps uppercase tracking-[0.1em] text-text-muted hover:bg-border-subtle hover:text-text-main transition-colors"
                 >

@@ -1,18 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin_or_developer
 from app.db.session import get_db
 from app.models.discount import Discount
 from app.models.project import Project
 from app.schemas.discount import DiscountCreateRequest, DiscountOut, DiscountUpdateRequest, ProjectDiscountCreateRequest
+from app.services.realtime import manager
 
-router = APIRouter(prefix="/api/admin/discounts", tags=["admin-discounts"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/admin/discounts", tags=["admin-discounts"], dependencies=[Depends(require_admin_or_developer)])
 
 project_scoped_router = APIRouter(
     prefix="/api/admin/projects/{project_id}/discounts",
     tags=["admin-discounts"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 
@@ -72,6 +73,7 @@ def create_discount(payload: DiscountCreateRequest, db: Session = Depends(get_db
         _deactivate_other_active_discounts(payload.client_id, db, except_id=discount.id)
     db.commit()
     db.refresh(discount)
+    manager.broadcast_change("discounts", client_id=discount.client_id)
     return discount
 
 
@@ -94,14 +96,17 @@ def overwrite_discount(discount_id: int, payload: DiscountUpdateRequest, db: Ses
         _deactivate_other_active_discounts(discount.client_id, db, except_id=discount.id)
     db.commit()
     db.refresh(discount)
+    manager.broadcast_change("discounts", client_id=discount.client_id)
     return discount
 
 
 @router.delete("/{discount_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_discount(discount_id: int, db: Session = Depends(get_db)):
     discount = _get_discount_or_404(discount_id, db)
+    client_id = discount.client_id
     db.delete(discount)
     db.commit()
+    manager.broadcast_change("discounts", client_id=client_id)
 
 
 @project_scoped_router.get("", response_model=list[DiscountOut])
@@ -127,4 +132,5 @@ def create_project_discount(project_id: int, payload: ProjectDiscountCreateReque
         _deactivate_other_active_project_discounts(project.id, db, except_id=discount.id)
     db.commit()
     db.refresh(discount)
+    manager.broadcast_change("discounts", client_id=discount.client_id)
     return discount

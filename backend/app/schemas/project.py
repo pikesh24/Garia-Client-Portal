@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,16 +12,31 @@ class ProjectOut(BaseModel):
     client_id: int
     name: str
     status: ProjectStatus
+    hourly_rate_frontend: float | None
+    hourly_rate_backend: float | None
+    hourly_rate_production: float | None
+    maintenance_price: float | None
+    project_start_date: date | None
     created_at: datetime
 
 
 class ProjectCreateRequest(BaseModel):
     name: str
+    hourly_rate_frontend: float | None = None
+    hourly_rate_backend: float | None = None
+    hourly_rate_production: float | None = None
+    maintenance_price: float | None = None
+    project_start_date: date | None = None
 
 
 class ProjectUpdateRequest(BaseModel):
     name: str | None = None
     status: ProjectStatus | None = None
+    hourly_rate_frontend: float | None = None
+    hourly_rate_backend: float | None = None
+    hourly_rate_production: float | None = None
+    maintenance_price: float | None = None
+    project_start_date: date | None = None
 
 
 class ProjectListResponse(BaseModel):

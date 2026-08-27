@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/api";
 import { Project, User } from "@/lib/types";
 import { PaginatedCardGrid } from "@/components/PaginatedCardGrid";
 import { ProjectFilterValue } from "@/components/AdminProjectFilter";
+import { formatDate } from "@/lib/date";
 
 export function ClientProjectCardPicker({
   value,
@@ -32,28 +33,32 @@ export function ClientProjectCardPicker({
     const client = clients.find((c) => String(c.id) === value.clientId);
     const project = projects.find((p) => String(p.id) === value.projectId);
     return (
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-4 border-border-strong bg-bg-panel-alt p-6 shadow-[6px_6px_0px_0px_var(--border-strong)]">
-        <div className="font-data-mono text-sm">
-          <span className="font-bold uppercase text-text-muted mr-2">Client:</span>
-          <span className="font-bold text-text-main mr-6">{client?.full_name ?? `#${value.clientId}`}</span>
-          <span className="font-bold uppercase text-text-muted mr-2">Project:</span>
-          <span className="font-bold text-text-main">{project?.name ?? `#${value.projectId}`}</span>
+      <div className="mb-10 flex flex-col md:flex-row border-4 border-border-strong bg-bg-base shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
+        <div className="flex-1 p-4 md:p-6 border-b-4 md:border-b-0 md:border-r-4 border-border-strong flex flex-col justify-center relative">
+          <div className="flex justify-between items-start mb-1">
+            <span className="font-data-mono text-[10px] text-text-muted font-black tracking-widest uppercase">Client</span>
+            <button
+              type="button"
+              onClick={() => onChange({ clientId: "", projectId: "" })}
+              className="font-data-mono text-[10px] uppercase tracking-widest text-text-muted hover:text-text-main transition-colors font-bold underline decoration-2 underline-offset-4"
+            >
+              Change Client
+            </button>
+          </div>
+          <span className="font-headline-lg text-xl md:text-2xl font-black uppercase text-text-main truncate">{client?.full_name ?? `#${value.clientId}`}</span>
         </div>
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => onChange({ clientId: value.clientId, projectId: "" })}
-            className="font-data-mono text-[10px] uppercase tracking-widest text-amber underline"
-          >
-            Change Project
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange({ clientId: "", projectId: "" })}
-            className="font-data-mono text-[10px] uppercase tracking-widest text-amber underline"
-          >
-            Change Client
-          </button>
+        <div className="flex-1 p-4 md:p-6 bg-brand-green flex flex-col justify-center relative">
+          <div className="flex justify-between items-start mb-1">
+            <span className="font-data-mono text-[10px] text-on-brand-green/80 font-black tracking-widest uppercase">Project</span>
+            <button
+              type="button"
+              onClick={() => onChange({ clientId: value.clientId, projectId: "" })}
+              className="font-data-mono text-[10px] uppercase tracking-widest text-on-brand-green/80 hover:text-white transition-colors font-bold underline decoration-2 underline-offset-4"
+            >
+              Change Project
+            </button>
+          </div>
+          <span className="font-headline-lg text-xl md:text-2xl font-black uppercase text-on-brand-green truncate">{project?.name ?? `#${value.projectId}`}</span>
         </div>
       </div>
     );
@@ -172,7 +177,7 @@ export function ClientProjectCardPicker({
                       {p.name}
                     </h2>
                     <p className="font-data-mono text-xs text-text-muted">
-                      Created {new Date(p.created_at).toLocaleDateString()}
+                      Created {formatDate(p.created_at)}
                     </p>
                   </div>
                 </div>

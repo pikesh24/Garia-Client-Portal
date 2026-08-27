@@ -2,19 +2,32 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage } from "@/lib/types";
-import { Alert, Button, Label, Modal, PageHeader, StatusBadge, Textarea } from "@/components/ui";
+import { Alert, Button, Field, Input, Label, Modal, PageHeader, StatusBadge, Textarea } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
 import { useAdminProjectFilter } from "@/components/AdminProjectFilter";
 import { ClientProjectCardPicker } from "@/components/ClientProjectCardPicker";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
+import { markFeatureRequestRead, useUnreadFeatureRequestIds } from "@/lib/unreadFeatureMessages";
+
+function formatINR(amount: number | null): string {
+  if (amount == null) return "—";
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
 
 export default function AdminFeatureRequestsPage() {
   const [filter, setFilter] = useAdminProjectFilter();
+  const searchParams = useSearchParams();
+  const featureIdParam = searchParams.get("featureId");
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<FeatureRequest | null>(null);
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const unreadIds = useUnreadFeatureRequestIds();
 
   async function load() {
     if (!filter.projectId) {
@@ -26,6 +39,10 @@ export default function AdminFeatureRequestsPage() {
       const data = await apiRequest<FeatureRequest[]>(`/api/admin/projects/${filter.projectId}/feature-requests`);
       setRequests(data);
       if (selected) setSelected(data.find((f) => f.id === selected.id) ?? null);
+      if (featureIdParam) {
+        const match = data.find((f) => f.id === Number(featureIdParam));
+        if (match) setSelected(match);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not load feature requests");
     } finally {
@@ -35,15 +52,19 @@ export default function AdminFeatureRequestsPage() {
 
   useEffect(() => {
     load();
-  }, [filter.projectId]);
+  }, [filter.projectId, featureRequestsVersion]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Feature Requests"
         action={
-          <Link href="/admin/feature-requests" className="text-amber underline">
-            ← Back to Features
+          <Link 
+            href="/admin/feature-requests" 
+            className="inline-flex items-center gap-2 font-label-caps text-xs font-black uppercase tracking-widest border-2 border-border-strong bg-bg-panel-alt px-6 py-3 text-text-main transition-all shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--shadow-strong)] hover:bg-text-main hover:text-bg-base"
+          >
+            <span className="material-symbols-outlined text-lg">arrow_back</span>
+            Back to Features
           </Link>
         }
       />
@@ -77,6 +98,12 @@ export default function AdminFeatureRequestsPage() {
               <span className="absolute -right-4 -bottom-10 opacity-10 pointer-events-none font-bg-numeral text-[10rem] text-text-main leading-none select-none">
                 {String.fromCharCode(65 + (i % 26))}
               </span>
+              {unreadIds.includes(fr.id) && (
+                <span
+                  className="absolute top-4 right-4 h-3 w-3 rounded-full bg-brand-green animate-pulse"
+                  title="New message"
+                />
+              )}
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-6">
                   <span className="font-data-mono text-data-mono text-text-muted tracking-[0.1em]">
@@ -89,7 +116,7 @@ export default function AdminFeatureRequestsPage() {
                 </h3>
                 <p className="text-sm text-text-muted line-clamp-2 mb-6">{fr.description}</p>
                 <p className="font-data-mono text-data-mono text-xs text-text-muted tracking-[0.1em]">
-                  {new Date(fr.created_at).toLocaleDateString()}
+                  {formatDate(fr.created_at)}
                 </p>
               </div>
             </button>
@@ -98,7 +125,12 @@ export default function AdminFeatureRequestsPage() {
       )}
 
       {selected && (
-        <AdminFeatureRequestDetail featureRequest={selected} onClose={() => setSelected(null)} onChanged={load} />
+        <AdminFeatureRequestDetail
+          featureRequest={selected}
+          projectId={filter.projectId}
+          onClose={() => setSelected(null)}
+          onChanged={load}
+        />
       )}
     </div>
   );
@@ -106,10 +138,12 @@ export default function AdminFeatureRequestsPage() {
 
 function AdminFeatureRequestDetail({
   featureRequest,
+  projectId,
   onClose,
   onChanged,
 }: {
   featureRequest: FeatureRequest;
+  projectId: string;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -118,10 +152,44 @@ function AdminFeatureRequestDetail({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [frontendHours, setFrontendHours] = useState(featureRequest.quoted_frontend_hours?.toString() ?? "");
+  const [backendHours, setBackendHours] = useState(featureRequest.quoted_backend_hours?.toString() ?? "");
+  const [productionHours, setProductionHours] = useState(featureRequest.quoted_production_hours?.toString() ?? "");
+  const [savingHours, setSavingHours] = useState(false);
+
+  const locked = featureRequest.status !== "under_review" && featureRequest.status !== "declined";
+  const totalQuotedHours =
+    (featureRequest.quoted_frontend_hours ?? 0) +
+    (featureRequest.quoted_backend_hours ?? 0) +
+    (featureRequest.quoted_production_hours ?? 0);
 
   useEffect(() => {
     setMessages(featureRequest.messages);
+    setFrontendHours(featureRequest.quoted_frontend_hours?.toString() ?? "");
+    setBackendHours(featureRequest.quoted_backend_hours?.toString() ?? "");
+    setProductionHours(featureRequest.quoted_production_hours?.toString() ?? "");
+    markFeatureRequestRead(featureRequest.id);
   }, [featureRequest]);
+
+  async function saveHours() {
+    setSavingHours(true);
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/projects/${projectId}/base-project/${featureRequest.id}`, {
+        method: "PATCH",
+        body: {
+          quoted_frontend_hours: frontendHours ? Number(frontendHours) : null,
+          quoted_backend_hours: backendHours ? Number(backendHours) : null,
+          quoted_production_hours: productionHours ? Number(productionHours) : null,
+        },
+      });
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not save hours");
+    } finally {
+      setSavingHours(false);
+    }
+  }
 
   async function sendMessage() {
     if (!body.trim()) return;
@@ -172,14 +240,71 @@ function AdminFeatureRequestDetail({
 
         <p className="text-sm text-text-main whitespace-pre-wrap">{featureRequest.description}</p>
 
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={updating} onClick={() => setStatus("approved")}>
-            Approve
-          </Button>
-          <Button disabled={updating} variant="danger" onClick={() => setStatus("declined")}>
-            Decline
-          </Button>
-        </div>
+        {featureRequest.status === "under_review" ? (
+          <div className="bg-bg-panel-alt border-2 border-border-strong p-4 space-y-3">
+            <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase">
+              Quoted Hours — required before this can be approved
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field>
+                <Label>Frontend</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={frontendHours}
+                  onChange={(e) => setFrontendHours(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <Label>Backend</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={backendHours}
+                  onChange={(e) => setBackendHours(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <Label>Production</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={productionHours}
+                  onChange={(e) => setProductionHours(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-data-mono text-sm text-brand-green font-bold">
+                {formatINR(featureRequest.price)}
+              </span>
+              <Button variant="secondary" disabled={savingHours} onClick={saveHours}>
+                {savingHours ? "Saving..." : "Save Hours"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-bg-panel-alt border-2 border-border-strong p-4 flex items-center justify-between gap-3">
+            <span className="font-data-mono text-xs text-text-muted uppercase tracking-widest">
+              Hours (F/B/P): {featureRequest.quoted_frontend_hours ?? "—"} / {featureRequest.quoted_backend_hours ?? "—"} /{" "}
+              {featureRequest.quoted_production_hours ?? "—"}
+            </span>
+            <span className="font-data-mono text-sm text-brand-green font-bold">
+              {formatINR(featureRequest.price)}
+            </span>
+          </div>
+        )}
+
+        {featureRequest.status === "under_review" && (
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={updating || totalQuotedHours <= 0} onClick={() => setStatus("approved")}>
+              Approve
+            </Button>
+            <Button disabled={updating} variant="danger" onClick={() => setStatus("declined")}>
+              Decline
+            </Button>
+          </div>
+        )}
 
         <ChatDiscussion
           messages={messages}
@@ -188,6 +313,7 @@ function AdminFeatureRequestDetail({
           setBody={setBody}
           sendMessage={sendMessage}
           sending={sending}
+          readOnly={locked}
         />
       </div>
     </Modal>

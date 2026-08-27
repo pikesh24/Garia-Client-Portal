@@ -4,6 +4,7 @@ import enum
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     CLIENT = "client"
+    DEVELOPER = "developer"
 
 
 class MeetingType(str, enum.Enum):
@@ -25,18 +26,17 @@ class ProposedBy(str, enum.Enum):
     ADMIN = "admin"
 
 
+class RecurrenceFrequency(str, enum.Enum):
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
 class TicketStatus(str, enum.Enum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"
     OUT_OF_SCOPE = "out_of_scope"
     RESOLVED = "resolved"
-
-
-class TicketPriority(str, enum.Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
 
 
 class FeatureRequestStatus(str, enum.Enum):
@@ -65,6 +65,11 @@ class InvoiceStatus(str, enum.Enum):
     DRAFT = "draft"
     FINALIZED = "finalized"
     PAID = "paid"
+
+
+class InvoiceLineItemType(str, enum.Enum):
+    FEATURE = "feature"
+    MAINTENANCE = "maintenance"
 
 
 class MaintenanceStatus(str, enum.Enum):

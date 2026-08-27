@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { ConfirmProvider } from "@/lib/confirm";
 import { Toaster } from "@/components/Toast";
+import { WebSocketProvider } from "@/components/WebSocketProvider";
 
 export const metadata: Metadata = {
   title: "Garia Solutions Portal",
@@ -26,10 +27,12 @@ export default function RootLayout({
       </head>
       <body className="bg-bg-base text-text-main font-body-md min-h-screen overflow-x-hidden selection:bg-brand-green selection:text-on-brand-green transition-colors duration-200">
         <AuthProvider>
-          <ConfirmProvider>
-            {children}
-            <Toaster />
-          </ConfirmProvider>
+          <WebSocketProvider>
+            <ConfirmProvider>
+              {children}
+              <Toaster />
+            </ConfirmProvider>
+          </WebSocketProvider>
         </AuthProvider>
       </body>
     </html>

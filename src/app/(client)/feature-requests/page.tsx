@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage } from "@/lib/types";
 import { useProject } from "@/lib/project-context";
+import { formatDate } from "@/lib/date";
+import { markFeatureRequestRead, useUnreadFeatureRequestIds } from "@/lib/unreadFeatureMessages";
 import {
   Alert,
   Button,
@@ -18,12 +21,17 @@ import {
   Th,
 } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 export default function FeatureRequestsPage() {
   const { currentProject } = useProject();
+  const searchParams = useSearchParams();
+  const featureIdParam = searchParams.get("featureId");
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const unreadIds = useUnreadFeatureRequestIds();
 
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
@@ -41,6 +49,10 @@ export default function FeatureRequestsPage() {
       const data = await apiRequest<FeatureRequest[]>(`/api/projects/${currentProject.id}/feature-requests`);
       setRequests(data);
       if (selected) setSelected(data.find((f) => f.id === selected.id) ?? null);
+      if (featureIdParam) {
+        const match = data.find((f) => f.id === Number(featureIdParam));
+        if (match) setSelected(match);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not load feature requests");
     } finally {
@@ -50,7 +62,7 @@ export default function FeatureRequestsPage() {
 
   useEffect(() => {
     load();
-  }, [currentProject?.id]);
+  }, [currentProject?.id, featureRequestsVersion]);
 
   async function createRequest(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +116,12 @@ export default function FeatureRequestsPage() {
               <span className="absolute -right-4 -bottom-10 opacity-10 pointer-events-none font-bg-numeral text-[10rem] text-text-main leading-none select-none">
                 {String.fromCharCode(65 + (i % 26))}
               </span>
+              {unreadIds.includes(fr.id) && (
+                <span
+                  className="absolute top-4 right-4 h-3 w-3 rounded-full bg-brand-green animate-pulse"
+                  title="New message"
+                />
+              )}
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-6">
                   <span className="font-data-mono text-data-mono text-text-muted tracking-[0.1em]">
@@ -116,7 +134,7 @@ export default function FeatureRequestsPage() {
                 </h3>
                 <p className="text-sm text-text-muted line-clamp-2 mb-6">{fr.description}</p>
                 <p className="font-data-mono text-data-mono text-xs text-text-muted tracking-[0.1em]">
-                  {new Date(fr.created_at).toLocaleDateString()}
+                  {formatDate(fr.created_at)}
                 </p>
               </div>
             </button>
@@ -171,11 +189,14 @@ function FeatureRequestDetail({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
 
+  const locked = featureRequest.status !== "under_review" && featureRequest.status !== "declined";
+
   useEffect(() => {
     setName(featureRequest.name);
     setDescription(featureRequest.description);
     setMessages(featureRequest.messages);
     setEditing(false);
+    markFeatureRequestRead(featureRequest.id);
   }, [featureRequest]);
 
   async function resubmit(e: React.FormEvent) {
@@ -222,12 +243,14 @@ function FeatureRequestDetail({
 
         <div className="flex items-center justify-between">
           <StatusBadge status={featureRequest.status} />
-          <Button variant="secondary" onClick={() => setEditing((v) => !v)}>
-            {editing ? "Cancel Edit" : "Edit"}
-          </Button>
+          {!locked && (
+            <Button variant="secondary" onClick={() => setEditing((v) => !v)}>
+              {editing ? "Cancel Edit" : "Edit"}
+            </Button>
+          )}
         </div>
 
-        {editing ? (
+        {editing && !locked ? (
           <form onSubmit={resubmit} className="space-y-4">
             <Field>
               <Label>Name</Label>
@@ -250,6 +273,7 @@ function FeatureRequestDetail({
           setBody={setBody}
           sendMessage={sendMessage}
           sending={sending}
+          readOnly={locked}
         />
       </div>
     </Modal>

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useProject } from "@/lib/project-context";
 import { FeatureRequest, Invoice, MaintenanceRecord, Meeting, ProjectFeatures, Ticket } from "@/lib/types";
 import { Chip, ChipTone, Modal, StatusBadge } from "@/components/ui";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 type Urgency = "critical" | "high" | "medium" | "low";
 
@@ -70,31 +72,36 @@ export default function ClientDashboardPage() {
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalKey, setModalKey] = useState<string | null>(null);
+  const ticketsVersion = useWsEvent("tickets");
+  const meetingsVersion = useWsEvent("meetings");
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const invoicesVersion = useWsEvent("invoices");
+  const maintenanceVersion = useWsEvent("maintenance");
 
-  useEffect(() => {
-    if (!currentProject) return;
-
-    let cancelled = false;
-
-    function load(showSpinner: boolean) {
+  const load = useCallback(
+    (showSpinner: boolean) => {
+      if (!currentProject) return;
       if (showSpinner) setLoading(true);
       Promise.all([
-        apiRequest<Ticket[]>(`/api/projects/${currentProject!.id}/tickets`),
-        apiRequest<Meeting[]>(`/api/projects/${currentProject!.id}/meetings`),
-        apiRequest<ProjectFeatures>(`/api/projects/${currentProject!.id}/project-features`),
+        apiRequest<Ticket[]>(`/api/projects/${currentProject.id}/tickets`),
+        apiRequest<Meeting[]>(`/api/projects/${currentProject.id}/meetings`),
+        apiRequest<ProjectFeatures>(`/api/projects/${currentProject.id}/project-features`),
         apiRequest<Invoice[]>("/api/billing/invoices"),
-        apiRequest<MaintenanceRecord[]>(`/api/projects/${currentProject!.id}/maintenance/records`),
+        apiRequest<MaintenanceRecord[]>(`/api/projects/${currentProject.id}/maintenance/records`),
       ]).then(([t, m, pf, inv, maint]) => {
-        if (cancelled) return;
         setTickets(t);
         setMeetings(m);
         setFeatureRequests([...pf.base_features, ...pf.extra_features]);
-        setInvoices(inv.filter((i) => i.project_id === currentProject!.id));
+        setInvoices(inv.filter((i) => i.project_id === currentProject.id));
         setMaintenance(maint);
         setLoading(false);
       });
-    }
+    },
+    [currentProject?.id]
+  );
 
+  useEffect(() => {
+    if (!currentProject) return;
     load(true);
 
     // Data can change from actions taken on other pages or by the admin, so refresh
@@ -109,11 +116,18 @@ export default function ClientDashboardPage() {
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      cancelled = true;
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [currentProject?.id]);
+  }, [currentProject?.id, load]);
+
+  // ws-triggered updates refresh silently, without flashing the full loading spinner.
+  // Skip the initial mount (all versions start at 0) -- the effect above already
+  // handles the first load.
+  useEffect(() => {
+    if (ticketsVersion + meetingsVersion + featureRequestsVersion + invoicesVersion + maintenanceVersion === 0) return;
+    load(false);
+  }, [ticketsVersion, meetingsVersion, featureRequestsVersion, invoicesVersion, maintenanceVersion]);
 
   if (projectLoading || (currentProject && loading)) {
     return (
@@ -160,7 +174,7 @@ export default function ClientDashboardPage() {
   }
 
   const openTickets = tickets.filter((t) => t.status !== "resolved" && t.status !== "out_of_scope");
-  const criticalTickets = openTickets.filter((t) => t.priority === "critical" || t.priority === "high");
+  const inProgressTickets = openTickets.filter((t) => t.status === "in_progress");
 
   const upcomingMeetings = meetings
     .filter((m) => m.status === "confirmed" || m.status === "requested" || m.status === "reschedule_pending")
@@ -182,13 +196,33 @@ export default function ClientDashboardPage() {
   const baseDone = baseFeatures.filter((f) => f.status === "completed").length;
   const extraDone = extraFeatures.filter((f) => f.status === "completed").length;
 
+  const pendingBaseFeatures = baseFeatures.filter((f) => !f.base_feature_activated && f.status !== "declined");
+  const challengedBaseFeatures = pendingBaseFeatures.filter((f) => f.challenge_status === "open");
+  const awaitingApprovalFeatures = pendingBaseFeatures.filter((f) => f.challenge_status !== "open");
+
   // ---- Needs attention ----
   const attention: AttentionItem[] = [
+    ...challengedBaseFeatures.map((f) => ({
+      key: `FEAT-CH-${f.id}`,
+      urgency: "high" as Urgency,
+      label: `Challenge submitted — ${f.name}`,
+      meta: "AWAITING ADMIN RESPONSE",
+      action: "VIEW",
+      href: "/project-features",
+    })),
+    ...awaitingApprovalFeatures.map((f) => ({
+      key: `FEAT-${f.id}`,
+      urgency: "critical" as Urgency,
+      label: `Base feature awaiting approval — ${f.name}`,
+      meta: "ACTION REQUIRED: APPROVE SCOPE",
+      action: "APPROVE",
+      href: "/project-features",
+    })),
     ...rejectedMaintenance.map((m) => ({
       key: `MAINT-${m.id}`,
       urgency: "critical" as Urgency,
       label: `Maintenance proof rejected — cycle ${m.cycle_year}`,
-      meta: m.penalty_deadline ? `RESUBMIT BY ${new Date(m.penalty_deadline).toLocaleDateString()}` : "RESUBMIT REQUIRED",
+      meta: m.penalty_deadline ? `RESUBMIT BY ${formatDate(m.penalty_deadline)}` : "RESUBMIT REQUIRED",
       action: "RESUBMIT",
       href: "/maintenance",
     })),
@@ -202,9 +236,9 @@ export default function ClientDashboardPage() {
     })),
     ...openTickets.filter((t) => t.status === "open").map((t) => ({
       key: `TK-${t.id}`,
-      urgency: (t.priority === "critical" ? "critical" : t.priority === "high" ? "high" : "medium") as Urgency,
+      urgency: "high" as Urgency,
       label: `Ticket awaiting resolution — ${t.name}`,
-      meta: `${timeAgo(t.created_at)} OPEN · ${t.priority.toUpperCase()}`,
+      meta: `${timeAgo(t.created_at)} OPEN`,
       action: "VIEW",
       href: "/tickets",
     })),
@@ -221,7 +255,7 @@ export default function ClientDashboardPage() {
   const topAttention = attention.slice(0, 3);
 
   const clientStats: { key: string; icon: string; label: string; value: string; sub: string; tone: ChipTone }[] = [
-    { key: "tickets", icon: "confirmation_number", label: "OPEN TICKETS", value: String(openTickets.length), sub: criticalTickets.length ? `${criticalTickets.length} high priority` : "all under control", tone: "purple" },
+    { key: "tickets", icon: "confirmation_number", label: "OPEN TICKETS", value: String(openTickets.length), sub: inProgressTickets.length ? `${inProgressTickets.length} in progress` : "awaiting triage", tone: "purple" },
     { key: "meetings", icon: "event", label: "UPCOMING MEETINGS", value: String(upcomingMeetings.length), sub: upcomingMeetings[0] ? `next ${new Date(upcomingMeetings[0].confirmed_start_datetime ?? upcomingMeetings[0].pending_start_datetime).toLocaleDateString("en-US", { month: "short", day: "2-digit" })}` : "none scheduled", tone: "teal" },
     { key: "invoices", icon: "receipt_long", label: "INVOICES", value: String(unpaidInvoices.length), sub: unpaidInvoices.length ? `${formatINR(unpaidTotal)} due` : "all settled", tone: "brand" },
   ];
@@ -237,7 +271,7 @@ export default function ClientDashboardPage() {
     if (key === "tickets") {
       return {
         title: "OPEN TICKETS", subtitle: "ISSUES AWAITING RESOLUTION", footerLabel: "OPEN TICKET BOARD", footerHref: "/tickets",
-        items: openTickets.map((t) => ({ tagLabel: t.priority.toUpperCase(), tagTone: t.priority === "critical" ? "danger" : t.priority === "high" ? "purple" : t.priority === "medium" ? "blue" : "teal", title: t.name, meta: `TK-${t.id} · ${timeAgo(t.created_at)} open`, badgeStatus: t.status })),
+        items: openTickets.map((t) => ({ tagLabel: t.status === "open" ? "OPEN" : "IN PROGRESS", tagTone: t.status === "open" ? "danger" : "purple", title: t.name, meta: `TK-${t.id} · ${timeAgo(t.created_at)} open`, badgeStatus: t.status })),
       };
     }
     if (key === "meetings") {
@@ -249,7 +283,7 @@ export default function ClientDashboardPage() {
     if (key === "invoices") {
       return {
         title: "INVOICES", subtitle: "BILLING HISTORY", footerLabel: "OPEN BILLING", footerHref: "/billing",
-        items: [...invoices].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((i) => ({ tagLabel: `INV-${i.id}`, tagTone: "brand", title: formatINR(i.total), meta: i.finalized_at ? new Date(i.finalized_at).toLocaleDateString() : "Draft", badgeStatus: i.status })),
+        items: [...invoices].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((i) => ({ tagLabel: `INV-${i.id}`, tagTone: "brand", title: formatINR(i.total), meta: i.finalized_at ? formatDate(i.finalized_at) : "Draft", badgeStatus: i.status })),
       };
     }
     return null;

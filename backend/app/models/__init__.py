@@ -7,8 +7,10 @@ from app.models.maintenance import InfrastructureCostEntry, MaintenanceRecord
 from app.models.meeting import Meeting
 from app.models.meeting_availability import MeetingAvailability
 from app.models.meeting_block import MeetingBlock
+from app.models.recurring_meeting_block import RecurringMeetingBlock
 from app.models.project import Project
 from app.models.ticket import SupportTicket, TicketAttachment, TicketStatusHistory
+from app.models.ticket_assignment import TicketAssignment
 from app.models.user import User
 
 __all__ = [
@@ -19,9 +21,11 @@ __all__ = [
     "Meeting",
     "MeetingAvailability",
     "MeetingBlock",
+    "RecurringMeetingBlock",
     "SupportTicket",
     "TicketAttachment",
     "TicketStatusHistory",
+    "TicketAssignment",
     "FeatureRequest",
     "FeatureRequestMessage",
     "Discount",

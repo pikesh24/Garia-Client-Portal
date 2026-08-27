@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { apiRequest, fileUrl } from "@/lib/api";
 import { Discount, FeatureRequest, Invoice, MaintenanceRecord, Meeting, Ticket, User } from "@/lib/types";
 import { Chip, ChipTone, Modal, StatusBadge } from "@/components/ui";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 type Priority = "critical" | "high" | "medium" | "low";
-type ItemType = "TICKET" | "MEETING" | "FEATURE";
+type ItemType = "TICKET" | "MEETING" | "FEATURE" | "CHALLENGE";
 
 interface TriageItem {
   key: string;
@@ -15,6 +17,8 @@ interface TriageItem {
   title: string;
   client: string;
   priority: Priority;
+  // Ticket-only: how many developers are currently assigned (0 = unassigned).
+  assignedCount?: number;
   createdAt: string;
   href: string;
 }
@@ -37,8 +41,9 @@ interface ModalConfig {
 }
 
 const PRIORITY_RANK: Record<Priority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-const PRIORITY_TONE: Record<Priority, ChipTone> = { critical: "danger", high: "orange", medium: "amber", low: "neutral" };
-const TYPE_TONE: Record<ItemType, ChipTone> = { TICKET: "purple", MEETING: "teal", FEATURE: "blue" };
+const TYPE_TONE: Record<ItemType, ChipTone> = { TICKET: "purple", MEETING: "teal", FEATURE: "blue", CHALLENGE: "danger" };
+// Tickets take precedence over feature requests when priority and timing tie; challenges rank last of the three.
+const TYPE_RANK: Record<ItemType, number> = { TICKET: 0, MEETING: 1, FEATURE: 2, CHALLENGE: 3 };
 
 function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -74,13 +79,20 @@ export default function AdminDashboardPage() {
   const [invIdx, setInvIdx] = useState(0);
   const [maintIdx, setMaintIdx] = useState(0);
   const [discIdx, setDiscIdx] = useState(0);
+  const usersVersion = useWsEvent("users");
+  const meetingsVersion = useWsEvent("meetings");
+  const ticketsVersion = useWsEvent("tickets");
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const invoicesVersion = useWsEvent("invoices");
+  const discountsVersion = useWsEvent("discounts");
+  const maintenanceVersion = useWsEvent("maintenance");
 
   useEffect(() => {
     Promise.all([
       apiRequest<User[]>("/api/admin/users"),
       apiRequest<Meeting[]>("/api/admin/meetings"),
       apiRequest<Ticket[]>("/api/admin/tickets"),
-      apiRequest<FeatureRequest[]>("/api/admin/feature-requests"),
+      apiRequest<FeatureRequest[]>("/api/admin/feature-requests?include_base_features=true"),
       apiRequest<Invoice[]>("/api/admin/billing/invoices"),
       apiRequest<Discount[]>("/api/admin/discounts"),
       apiRequest<MaintenanceRecord[]>("/api/admin/maintenance/records"),
@@ -94,16 +106,17 @@ export default function AdminDashboardPage() {
       setMaintenanceRecords(mr);
       setLoading(false);
     });
-  }, []);
+  }, [usersVersion, meetingsVersion, ticketsVersion, featureRequestsVersion, invoicesVersion, discountsVersion, maintenanceVersion]);
 
   const clientLookup = new Map(users.map((u) => [u.id, u]));
   const clients = users.filter((u) => u.role === "client");
   const activeClients = clients.filter((u) => u.is_active);
 
   const openTickets = tickets.filter((t) => t.status !== "resolved" && t.status !== "out_of_scope");
-  const criticalOpenTickets = openTickets.filter((t) => t.priority === "critical");
+  const unassignedOpenTickets = openTickets.filter((t) => !t.assignments?.length);
   const pendingMeetings = meetings.filter((m) => m.status === "requested" || m.status === "reschedule_pending");
   const underReviewFeatures = featureRequests.filter((f) => f.status === "under_review");
+  const challengedFeatures = featureRequests.filter((f) => f.challenge_status === "open");
   const draftInvoices = invoices.filter((i) => i.status === "draft");
   const draftTotal = draftInvoices.reduce((s, i) => s + i.total, 0);
   const billedInvoices = invoices.filter((i) => i.status === "finalized" || i.status === "paid");
@@ -166,7 +179,8 @@ export default function AdminDashboardPage() {
       type: "TICKET" as const,
       title: t.name,
       client: clientLookup.get(t.client_id)?.full_name ?? "Unknown client",
-      priority: t.priority,
+      priority: "high" as Priority,
+      assignedCount: t.assignments?.length ?? 0,
       createdAt: t.created_at,
       href: `/admin/tickets?clientId=${t.client_id}&projectId=${t.project_id}&ticketId=${t.id}`,
     })),
@@ -186,15 +200,26 @@ export default function AdminDashboardPage() {
       client: clientLookup.get(f.client_id)?.full_name ?? "Unknown client",
       priority: "medium" as Priority,
       createdAt: f.created_at,
-      href: `/admin/feature-requests/requests?clientId=${f.client_id}&projectId=${f.project_id}&featureId=${f.id}`,
+      href: f.is_base_feature
+        ? `/admin/users/${f.client_id}/projects/${f.project_id}/base-features?featureId=${f.id}`
+        : `/admin/feature-requests/requests?clientId=${f.client_id}&projectId=${f.project_id}&featureId=${f.id}`,
     })),
-  ].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    ...challengedFeatures.map((f) => ({
+      key: `CH-${f.id}`,
+      type: "CHALLENGE" as const,
+      title: `Scope challenged — ${f.name}`,
+      client: clientLookup.get(f.client_id)?.full_name ?? "Unknown client",
+      priority: "high" as Priority,
+      createdAt: f.created_at,
+      href: `/admin/users/${f.client_id}/projects/${f.project_id}/base-features?featureId=${f.id}`,
+    })),
+  ].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || TYPE_RANK[a.type] - TYPE_RANK[b.type] || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const topPriority = triage.slice(0, 4);
 
   const adminStats: { key: string; icon: string; label: string; value: string; sub: string; tone: ChipTone }[] = [
     { key: "revenue", icon: "payments", label: "REVENUE THIS MONTH", value: formatINR(mrr), sub: `${formatINR(billedInvoices.reduce((s, i) => s + i.total, 0))} billed all-time`, tone: "brand" },
-    { key: "tickets", icon: "confirmation_number", label: "OPEN TICKETS", value: String(openTickets.length), sub: `${criticalOpenTickets.length} critical`, tone: "purple" },
+    { key: "tickets", icon: "confirmation_number", label: "OPEN TICKETS", value: String(openTickets.length), sub: `${unassignedOpenTickets.length} unassigned`, tone: "purple" },
     { key: "clients", icon: "groups", label: "ACTIVE CLIENTS", value: String(activeClients.length), sub: `${overdueMaintenanceCount} maintenance overdue`, tone: "amber" },
     { key: "meetings", icon: "event", label: "MEETINGS TODAY", value: String(meetingsToday.length), sub: meetingsToday.length ? "see unified calendar" : "none scheduled", tone: "teal" },
     { key: "features", icon: "category", label: "FEATURES IN REVIEW", value: String(underReviewFeatures.length), sub: `${newFeaturesThisWeek} new this week`, tone: "blue" },
@@ -207,16 +232,16 @@ export default function AdminDashboardPage() {
       return {
         title: "FULL PRIORITY QUEUE", subtitle: "ALL OPEN ITEMS · SORTED BY URGENCY", footerLabel: "VIEW ALL TICKETS", footerHref: "/admin/tickets",
         items: triage.map((t) =>
-          t.type === "FEATURE" || t.type === "MEETING"
+          t.type === "FEATURE" || t.type === "MEETING" || t.type === "CHALLENGE"
             ? { tagLabel: t.type, tagTone: TYPE_TONE[t.type], title: t.title, meta: `${t.key} · ${t.client} · ${timeAgo(t.createdAt)} open`, href: t.href }
-            : { tagLabel: t.priority.toUpperCase(), tagTone: PRIORITY_TONE[t.priority], title: t.title, meta: `${t.key} · ${t.client} · ${timeAgo(t.createdAt)} open`, href: t.href }
+            : { tagLabel: t.assignedCount ? `${t.assignedCount} DEV` : "UNASSIGNED", tagTone: t.assignedCount ? "purple" : "danger", title: t.title, meta: `${t.key} · ${t.client} · ${timeAgo(t.createdAt)} open`, href: t.href }
         ),
       };
     }
     if (key === "tickets") {
       return {
         title: "OPEN TICKETS", subtitle: "ISSUES AWAITING RESOLUTION", footerLabel: "OPEN TICKET BOARD", footerHref: "/admin/tickets",
-        items: openTickets.map((t) => ({ tagLabel: t.priority.toUpperCase(), tagTone: PRIORITY_TONE[t.priority], title: t.name, meta: `TK-${t.id} · ${clientLookup.get(t.client_id)?.full_name ?? "Unknown"}`, badgeStatus: t.status })),
+        items: openTickets.map((t) => ({ tagLabel: t.assignments?.length ? `${t.assignments.length} DEV` : "UNASSIGNED", tagTone: t.assignments?.length ? "purple" : "danger", title: t.name, meta: `TK-${t.id} · ${clientLookup.get(t.client_id)?.full_name ?? "Unknown"}`, badgeStatus: t.status })),
       };
     }
     if (key === "clients") {
@@ -312,23 +337,23 @@ export default function AdminDashboardPage() {
                   onClick={() => router.push(t.href)}
                   className="w-full text-left flex flex-col gap-2 py-4 px-5 border-b border-border-subtle last:border-0 hover:bg-bg-panel-alt transition-colors"
                   style={{
-                    borderLeft: `6px solid ${t.type === "FEATURE"
-                        ? "#2563d6"
-                        : t.type === "MEETING"
-                          ? "#0d9488"
-                          : t.priority === "critical"
-                            ? "var(--accent)"
-                            : t.priority === "high"
-                              ? "#FF7A1A"
-                              : t.priority === "medium"
-                                ? "#FFC800"
-                                : "var(--text-muted)"
+                    borderLeft: `6px solid ${t.type === "CHALLENGE"
+                        ? "#dc2626"
+                        : t.type === "FEATURE"
+                          ? "#2563d6"
+                          : t.type === "MEETING"
+                            ? "#0d9488"
+                            : t.assignedCount
+                              ? "#7c3aed"
+                              : "var(--accent)"
                       }`,
                   }}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex gap-2">
-                      {t.type !== "FEATURE" && t.type !== "MEETING" && <Chip tone={PRIORITY_TONE[t.priority]}>{t.priority}</Chip>}
+                      {t.type === "TICKET" && (
+                        <Chip tone={t.assignedCount ? "purple" : "danger"}>{t.assignedCount ? `${t.assignedCount} DEV` : "UNASSIGNED"}</Chip>
+                      )}
                       <Chip tone={TYPE_TONE[t.type]}>{t.type}</Chip>
                     </div>
                     <span className="font-data-mono text-[11px] text-text-muted">{timeAgo(t.createdAt)} open</span>
@@ -565,7 +590,7 @@ export default function AdminDashboardPage() {
                   </div>
                   <div className="space-y-3 font-data-mono text-sm relative z-10">
                     <div className="flex justify-between border-b-2 border-border-strong/30 pb-2"><span className="text-text-muted uppercase font-bold">Cycle</span><span className="font-bold">{curMaint.cycle_year}</span></div>
-                    <div className="flex justify-between border-b-2 border-border-strong/30 pb-2"><span className="text-text-muted uppercase font-bold">Due Date</span><span className="font-bold">{new Date(curMaint.due_date).toLocaleDateString()}</span></div>
+                    <div className="flex justify-between border-b-2 border-border-strong/30 pb-2"><span className="text-text-muted uppercase font-bold">Due Date</span><span className="font-bold">{formatDate(curMaint.due_date)}</span></div>
                     <div className="flex justify-between pt-1"><span className="text-text-muted uppercase font-bold">Amount</span><span className="font-bold">{formatINR(curMaint.amount)}</span></div>
                   </div>
                   {curMaint.proof_file_path && (

@@ -2,7 +2,7 @@ from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
-from app.models.enums import TicketPriority, TicketStatus
+from app.models.enums import TicketStatus
 
 
 class SupportTicket(Base, TimestampMixin):
@@ -17,9 +17,6 @@ class SupportTicket(Base, TimestampMixin):
     status: Mapped[TicketStatus] = mapped_column(
         Enum(TicketStatus, name="ticket_status"), default=TicketStatus.OPEN, nullable=False
     )
-    priority: Mapped[TicketPriority] = mapped_column(
-        Enum(TicketPriority, name="ticket_priority"), default=TicketPriority.MEDIUM, nullable=False
-    )
     resolution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     client: Mapped["User"] = relationship()
@@ -29,6 +26,9 @@ class SupportTicket(Base, TimestampMixin):
     )
     status_history: Mapped[list["TicketStatusHistory"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", order_by="TicketStatusHistory.created_at"
+    )
+    assignments: Mapped[list["TicketAssignment"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan"
     )
 
 

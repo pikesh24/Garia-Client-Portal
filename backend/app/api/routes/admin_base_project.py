@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin_or_developer
 from app.db.session import get_db
 from app.models.enums import FeatureRequestStatus
 from app.models.feature_request import FeatureRequest
@@ -13,11 +13,12 @@ from app.schemas.feature_request import (
     FeatureRequestAdminOut,
 )
 from app.services.pricing import compute_feature_price
+from app.services.realtime import manager
 
 router = APIRouter(
     prefix="/api/admin/projects/{project_id}/base-project",
     tags=["admin-base-project"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 
@@ -65,7 +66,7 @@ def create_base_feature(
         quoted_backend_hours=payload.quoted_backend_hours,
         quoted_production_hours=payload.quoted_production_hours,
         price=compute_feature_price(
-            project.client, payload.quoted_frontend_hours, payload.quoted_backend_hours, payload.quoted_production_hours
+            project, payload.quoted_frontend_hours, payload.quoted_backend_hours, payload.quoted_production_hours
         ),
         agreement_date=payload.agreement_date,
         added_by_client=not payload.is_base_feature,
@@ -73,6 +74,7 @@ def create_base_feature(
     db.add(fr)
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -92,7 +94,7 @@ def update_base_feature_details(
     for field, value in updates.items():
         setattr(fr, field, value)
     fr.price = compute_feature_price(
-        project.client, fr.quoted_frontend_hours, fr.quoted_backend_hours, fr.quoted_production_hours
+        project, fr.quoted_frontend_hours, fr.quoted_backend_hours, fr.quoted_production_hours
     )
 
     # Base features need the client to sign off again when the admin changes their hours/price,
@@ -106,4 +108,5 @@ def update_base_feature_details(
 
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr

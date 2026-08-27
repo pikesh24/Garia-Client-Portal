@@ -16,11 +16,22 @@ from app.schemas.feature_request import (
     FeatureRequestOut,
     FeatureRequestUpdateRequest,
 )
+from app.services.realtime import manager
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/feature-requests",
     tags=["feature-requests"],
     dependencies=[Depends(require_client)],
+)
+
+# Once a request has moved past review, its terms are locked in -- the client
+# can no longer edit the request or send further messages on it.
+LOCKED_STATUSES = (
+    FeatureRequestStatus.APPROVED,
+    FeatureRequestStatus.IN_PROGRESS,
+    FeatureRequestStatus.COMPLETED,
+    FeatureRequestStatus.OUT_OF_SCOPE,
+    FeatureRequestStatus.CANCELLED,
 )
 
 
@@ -53,6 +64,7 @@ def create_feature_request(
     db.add(fr)
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -65,11 +77,14 @@ def update_feature_request(
 ):
     """The client edits their own request's name/description and resubmits it for review."""
     fr = _get_own_feature_request(project.id, feature_request_id, db)
+    if fr.status in LOCKED_STATUSES:
+        raise IrreversibleActionConflict("This feature request has been approved and can no longer be edited")
     fr.name = payload.name
     fr.description = payload.description
     fr.status = FeatureRequestStatus.UNDER_REVIEW
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -90,12 +105,25 @@ def create_message(
     db: Session = Depends(get_db),
 ):
     fr = _get_own_feature_request(project.id, feature_request_id, db)
+    if fr.status in LOCKED_STATUSES:
+        raise IrreversibleActionConflict("This feature request has been approved and no longer accepts messages")
     message = FeatureRequestMessage(
         feature_request_id=fr.id, sender_id=current_user.id, sender_role=current_user.role, body=payload.body
     )
     db.add(message)
     db.commit()
     db.refresh(message)
+    manager.broadcast_change(
+        "feature_requests",
+        client_id=fr.client_id,
+        exclude_user_id=current_user.id,
+        kind="message",
+        feature_request_id=fr.id,
+        feature_name=fr.name,
+        project_id=fr.project_id,
+        is_base_feature=fr.is_base_feature,
+        sender_role=current_user.role.value,
+    )
     return message
 
 
@@ -116,6 +144,7 @@ def activate_base_feature(
     fr.added_by_client = True
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -134,6 +163,7 @@ def decline_base_feature(
     fr.status = FeatureRequestStatus.DECLINED
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -156,6 +186,7 @@ def open_challenge(
     fr.challenge_status = ChallengeStatus.OPEN
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -188,6 +219,17 @@ def create_challenge_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+    manager.broadcast_change(
+        "feature_requests",
+        client_id=fr.client_id,
+        exclude_user_id=current_user.id,
+        kind="message",
+        feature_request_id=fr.id,
+        feature_name=fr.name,
+        project_id=fr.project_id,
+        is_base_feature=fr.is_base_feature,
+        sender_role=current_user.role.value,
+    )
     return message
 
 
@@ -203,6 +245,7 @@ def request_cancellation_review(
     fr.status = FeatureRequestStatus.OUT_OF_SCOPE
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -227,4 +270,5 @@ def approve_feature_request(
 
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr

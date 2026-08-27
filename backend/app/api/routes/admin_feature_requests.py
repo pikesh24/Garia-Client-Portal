@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin
-from app.core.exceptions import BusinessRuleViolation
+from app.api.deps import require_admin_or_developer
+from app.api.routes.feature_requests import LOCKED_STATUSES
+from app.core.exceptions import BusinessRuleViolation, IrreversibleActionConflict
 from app.db.session import get_db
 from app.models.enums import ChallengeStatus, FeatureRequestStatus
 from app.models.feature_request import FeatureRequest, FeatureRequestMessage
@@ -19,15 +20,16 @@ from app.schemas.feature_request import (
 )
 from app.services.email import notify_feature_request_event
 from app.services.pricing import compute_feature_price
+from app.services.realtime import manager
 
 router = APIRouter(
-    prefix="/api/admin/feature-requests", tags=["admin-feature-requests"], dependencies=[Depends(require_admin)]
+    prefix="/api/admin/feature-requests", tags=["admin-feature-requests"], dependencies=[Depends(require_admin_or_developer)]
 )
 
 project_scoped_router = APIRouter(
     prefix="/api/admin/projects/{project_id}/feature-requests",
     tags=["admin-feature-requests"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 
@@ -76,7 +78,7 @@ def create_project_feature_request(
         quoted_backend_hours=payload.quoted_backend_hours,
         quoted_production_hours=payload.quoted_production_hours,
         price=compute_feature_price(
-            project.client,
+            project,
             payload.quoted_frontend_hours,
             payload.quoted_backend_hours,
             payload.quoted_production_hours,
@@ -87,6 +89,7 @@ def create_project_feature_request(
     db.add(fr)
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -107,10 +110,12 @@ def list_messages(feature_request_id: int, db: Session = Depends(get_db)):
 def create_message(
     feature_request_id: int,
     payload: FeatureRequestMessageCreateRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin_or_developer),
     db: Session = Depends(get_db),
 ):
     fr = _get_fr_or_404(feature_request_id, db)
+    if fr.status in LOCKED_STATUSES:
+        raise IrreversibleActionConflict("This feature request has been approved and no longer accepts messages")
     message = FeatureRequestMessage(
         feature_request_id=fr.id, sender_id=current_user.id, sender_role=current_user.role, body=payload.body
     )
@@ -121,6 +126,17 @@ def create_message(
     client = db.get(User, fr.client_id)
     if client:
         notify_feature_request_event(client.email, fr.id, "needs clarification")
+    manager.broadcast_change(
+        "feature_requests",
+        client_id=fr.client_id,
+        exclude_user_id=current_user.id,
+        kind="message",
+        feature_request_id=fr.id,
+        feature_name=fr.name,
+        project_id=fr.project_id,
+        is_base_feature=fr.is_base_feature,
+        sender_role=current_user.role.value,
+    )
     return message
 
 
@@ -134,7 +150,7 @@ def list_challenge_messages(feature_request_id: int, db: Session = Depends(get_d
 def create_challenge_message(
     feature_request_id: int,
     payload: FeatureRequestMessageCreateRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin_or_developer),
     db: Session = Depends(get_db),
 ):
     fr = _get_fr_or_404(feature_request_id, db)
@@ -150,6 +166,17 @@ def create_challenge_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+    manager.broadcast_change(
+        "feature_requests",
+        client_id=fr.client_id,
+        exclude_user_id=current_user.id,
+        kind="message",
+        feature_request_id=fr.id,
+        feature_name=fr.name,
+        project_id=fr.project_id,
+        is_base_feature=fr.is_base_feature,
+        sender_role=current_user.role.value,
+    )
     return message
 
 
@@ -165,6 +192,7 @@ def decide_challenge(
     fr.challenge_status = ChallengeStatus.APPROVED if payload.decision == "approved" else ChallengeStatus.DENIED
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -173,6 +201,10 @@ def update_status(
     feature_request_id: int, payload: FeatureRequestStatusUpdateRequest, db: Session = Depends(get_db)
 ):
     fr = _get_fr_or_404(feature_request_id, db)
+    if payload.status == "approved":
+        total_hours = (fr.quoted_frontend_hours or 0) + (fr.quoted_backend_hours or 0) + (fr.quoted_production_hours or 0)
+        if total_hours <= 0:
+            raise BusinessRuleViolation("Quoted hours must be set before this feature request can be approved")
     fr.status = FeatureRequestStatus(payload.status)
     if fr.status == FeatureRequestStatus.APPROVED:
         fr.added_by_client = True
@@ -182,6 +214,7 @@ def update_status(
     client = db.get(User, fr.client_id)
     if client:
         notify_feature_request_event(client.email, fr.id, payload.status)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -193,6 +226,7 @@ def start_feature(feature_request_id: int, db: Session = Depends(get_db)):
     fr.status = FeatureRequestStatus.IN_PROGRESS
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -203,13 +237,14 @@ def complete_feature(
     fr = _get_fr_or_404(feature_request_id, db)
     if fr.status != FeatureRequestStatus.IN_PROGRESS:
         raise BusinessRuleViolation("Only in-progress feature requests can be marked completed")
-    if payload.actual_hours_taken is None:
+    if not payload.actual_hours_taken:
         raise BusinessRuleViolation("actual_hours_taken is required to mark a feature request as completed")
 
     fr.actual_hours_taken = payload.actual_hours_taken
     fr.status = FeatureRequestStatus.COMPLETED
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
@@ -219,11 +254,14 @@ def mark_out_of_scope(feature_request_id: int, db: Session = Depends(get_db)):
     fr.status = FeatureRequestStatus.OUT_OF_SCOPE
     db.commit()
     db.refresh(fr)
+    manager.broadcast_change("feature_requests", client_id=fr.client_id)
     return fr
 
 
 @router.delete("/{feature_request_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_feature_request(feature_request_id: int, db: Session = Depends(get_db)):
     fr = _get_fr_or_404(feature_request_id, db)
+    client_id = fr.client_id
     db.delete(fr)
     db.commit()
+    manager.broadcast_change("feature_requests", client_id=client_id)

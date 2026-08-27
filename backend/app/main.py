@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import (
     admin_base_project,
     admin_billing,
+    admin_developers,
     admin_discounts,
     admin_feature_requests,
     admin_maintenance,
@@ -16,6 +17,7 @@ from app.api.routes import (
     admin_users,
     auth,
     billing,
+    developer_tickets,
     discounts,
     feature_requests,
     maintenance,
@@ -24,6 +26,7 @@ from app.api.routes import (
     project_features,
     projects,
     tickets,
+    ws,
 )
 from app.core.config import settings
 
@@ -51,9 +54,11 @@ app.include_router(project_features.router)
 app.include_router(discounts.router)
 app.include_router(billing.router)
 app.include_router(maintenance.router)
+app.include_router(maintenance.client_router)
 
 # Admin routers
 app.include_router(admin_users.router)
+app.include_router(admin_developers.router)
 app.include_router(admin_projects.router)
 app.include_router(admin_base_project.router)
 app.include_router(admin_meetings.router)
@@ -69,6 +74,12 @@ app.include_router(admin_billing.project_scoped_router)
 app.include_router(admin_maintenance.router)
 app.include_router(admin_maintenance.records_project_scoped_router)
 app.include_router(admin_maintenance.infra_costs_project_scoped_router)
+
+# Developer-facing routers
+app.include_router(developer_tickets.router)
+
+# WebSocket (real-time sync)
+app.include_router(ws.router)
 
 
 @app.get("/api/health")

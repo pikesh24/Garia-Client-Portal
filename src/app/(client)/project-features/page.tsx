@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, ProjectFeatures } from "@/lib/types";
 import { Alert, Button, EmptyState, Modal, PageHeader, StatusBadge } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
 import { useProject } from "@/lib/project-context";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
+import { markFeatureRequestRead, useUnreadFeatureRequestIds } from "@/lib/unreadFeatureMessages";
 
 function formatINR(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
@@ -13,11 +17,17 @@ function formatINR(amount: number): string {
 
 export default function ProjectFeaturesPage() {
   const { currentProject } = useProject();
+  const searchParams = useSearchParams();
+  const focusFeatureId = searchParams.get("featureId");
   const [features, setFeatures] = useState<ProjectFeatures | null>(null);
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [challenging, setChallenging] = useState<FeatureRequest | null>(null);
   const [loading, setLoading] = useState(true);
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const maintenanceVersion = useWsEvent("maintenance");
+  const unreadIds = useUnreadFeatureRequestIds();
+  const autoOpenedFeatureId = useRef<string | null>(null);
 
   async function load() {
     if (!currentProject) {
@@ -41,7 +51,19 @@ export default function ProjectFeaturesPage() {
 
   useEffect(() => {
     load();
-  }, [currentProject?.id]);
+  }, [currentProject?.id, featureRequestsVersion, maintenanceVersion]);
+
+  useEffect(() => {
+    if (!focusFeatureId || !features) return;
+    if (autoOpenedFeatureId.current === focusFeatureId) return;
+    const match = [...features.base_features, ...features.extra_features].find(
+      (f) => f.id === Number(focusFeatureId)
+    );
+    if (match && match.challenge_status !== "none") {
+      autoOpenedFeatureId.current = focusFeatureId;
+      setChallenging(match);
+    }
+  }, [focusFeatureId, features]);
 
   async function approve(fr: FeatureRequest) {
     if (!currentProject) return;
@@ -81,53 +103,68 @@ export default function ProjectFeaturesPage() {
     }
   }
 
-  function renderFeatureCard(fr: FeatureRequest) {
+  function renderFeatureCard(fr: FeatureRequest, type: "base" | "extra") {
     const featureServices = services.filter((s) => s.feature_request_id === fr.id);
     const needsApproval =
       fr.is_base_feature && !fr.base_feature_activated && fr.status !== "declined";
     const challengeOpen = fr.challenge_status === "open";
     const challengeDecided = fr.challenge_status === "approved" || fr.challenge_status === "denied";
 
+    const isExtra = type === "extra";
+    const cardBorderColor = "border-border-strong";
+    const cardShadow = "shadow-[8px_8px_0px_0px_var(--shadow-strong)]";
+    const cardBg = "bg-bg-base";
+
     return (
-      <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative transition-all mb-8">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 border-b-2 border-border-strong pb-6">
-          <div>
-            <div className="flex items-center gap-3 mb-3">
-              <span className="font-data-mono text-xs uppercase tracking-widest text-text-muted bg-bg-panel-alt px-2 py-1 border border-border-strong">
-                ID: #{fr.id} {fr.feature_id ? `· ${fr.feature_id}` : ""}
+      <div key={fr.id} className={`border-4 ${cardBorderColor} ${cardBg} p-8 ${cardShadow} relative transition-all mb-12 hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[12px_12px_0px_0px_var(--shadow-strong)]`}>
+        {unreadIds.includes(fr.id) && (
+          <span
+            className="absolute top-4 right-4 h-3 w-3 rounded-full bg-brand-green animate-pulse z-10"
+            title="New message"
+          />
+        )}
+        {isExtra && (
+          <div className="absolute -top-5 -right-5 md:-top-6 md:-right-6 rotate-3">
+             <span className="bg-coral-red text-white font-data-mono text-xs font-black uppercase tracking-widest px-4 py-2 border-4 border-border-strong shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+               EXTRA FEATURE
+             </span>
+          </div>
+        )}
+        
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 border-b-4 border-border-strong pb-6">
+          <div className="w-full">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <span className="font-data-mono text-xs font-black uppercase tracking-widest px-3 py-1 border-2 border-border-strong bg-text-main text-bg-base">
+                {fr.feature_id ? `${fr.feature_id}` : `ID: #${fr.id}`}
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Status:</span>
-                <StatusBadge status={needsApproval ? "pending" : fr.status} />
-              </span>
-              {fr.is_base_feature && fr.challenge_status !== "none" && (
-                <span className="flex items-center gap-1.5">
-                  <span className="font-data-mono text-[9px] uppercase tracking-widest text-text-muted">Challenge:</span>
-                  <StatusBadge status={fr.challenge_status} />
-                </span>
-              )}
+              <div className="flex flex-col items-end">
+                <span className="font-data-mono text-[9px] text-text-muted font-bold tracking-widest uppercase mb-1">CURRENT STATUS</span>
+                <div className="scale-110 origin-right">
+                  <StatusBadge status={needsApproval ? "pending" : fr.status} />
+                </div>
+              </div>
             </div>
-            <h4 className="font-headline-lg text-2xl font-black uppercase text-text-main leading-tight mb-2">
+            <h4 className="font-headline-lg text-3xl font-black uppercase leading-tight mb-3 text-text-main">
               {fr.name}
             </h4>
-            <p className="text-sm text-text-muted max-w-3xl whitespace-pre-wrap">{fr.description}</p>
+            <p className="text-base text-text-main font-medium max-w-3xl whitespace-pre-wrap leading-relaxed">{fr.description}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-bg-panel-alt p-4 border-2 border-border-strong mb-6">
-          <div>
-            <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Hours (F / B / P)</div>
-            <div className="font-data-mono text-sm text-text-main font-bold">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-bg-panel-alt p-6 border-4 border-border-strong mb-6 shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+          <div className="border-l-4 border-border-strong pl-4">
+            <div className="font-data-mono text-[9px] text-text-muted font-black tracking-widest uppercase mb-1">HOURS (Frontend / Backend / Production)</div>
+            <div className="font-display-xl text-xl text-text-main font-black">
               {fr.quoted_frontend_hours ?? "—"} / {fr.quoted_backend_hours ?? "—"} / {fr.quoted_production_hours ?? "—"}
             </div>
           </div>
-          <div>
-            <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Agreement Date</div>
-            <div className="font-data-mono text-sm text-text-main font-bold">{fr.agreement_date ?? "—"}</div>
+          <div className="border-l-4 border-border-strong pl-4">
+            <div className="font-data-mono text-[10px] text-text-muted font-black tracking-widest uppercase mb-1">AGREEMENT DATE</div>
+            <div className="font-display-xl text-xl text-text-main font-black">{formatDate(fr.agreement_date)}</div>
           </div>
-          <div>
-            <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Price</div>
-            <div className="font-data-mono text-sm text-brand-green font-bold">{fr.price != null ? formatINR(fr.price) : "—"}</div>
+          <div className="border-l-4 border-brand-green pl-4">
+            <div className="font-data-mono text-[10px] text-brand-green font-black tracking-widest uppercase mb-1">PRICE</div>
+            <div className="font-display-xl text-2xl text-brand-green font-black">{fr.price != null ? formatINR(fr.price) : "—"}</div>
           </div>
         </div>
 
@@ -152,46 +189,64 @@ export default function ProjectFeaturesPage() {
           </div>
         )}
 
+        {needsApproval && (
+          <div className="mt-8 border-4 border-brand-green bg-brand-green p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)]">
+            <p className="text-xl font-black text-bg-base mb-3 uppercase tracking-widest flex items-center gap-3">
+              <span className="material-symbols-outlined text-3xl text-bg-base">check_circle</span>
+              ACTION REQUIRED: APPROVE SCOPE
+            </p>
+            <p className="text-base text-bg-base/90 mb-6 font-bold max-w-3xl">
+              This feature specification is ready for your review. Please confirm the hours and pricing to proceed with development.
+            </p>
+            {fr.is_base_feature && (
+              <div className={`bg-bg-base border-4 ${challengeDecided ? (fr.challenge_status === 'approved' ? 'border-brand-green' : 'border-coral-red') : 'border-border-strong'} p-4 mb-6 shadow-[4px_4px_0px_0px_var(--shadow-strong)]`}>
+                {challengeOpen ? (
+                  <p className="text-sm text-text-main font-bold flex items-start gap-2">
+                    <span className="material-symbols-outlined text-amber mt-0.5">forum</span>
+                    <span>You have an open <strong className="text-amber uppercase">Challenge</strong> for this feature. Please wait for the admin to review it.</span>
+                  </p>
+                ) : challengeDecided ? (
+                  <p className="text-sm text-text-main font-bold flex items-start gap-2">
+                    <span className={`material-symbols-outlined mt-0.5 ${fr.challenge_status === 'approved' ? 'text-brand-green' : 'text-coral-red'}`}>
+                      {fr.challenge_status === 'approved' ? 'check_circle' : 'cancel'}
+                    </span>
+                    <span>Your challenge has been <strong className={`uppercase ${fr.challenge_status === 'approved' ? 'text-brand-green' : 'text-coral-red'}`}>{fr.challenge_status}</strong>. Please review the discussion and decide how to proceed.</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-text-main font-bold flex items-start gap-2">
+                    <span className="material-symbols-outlined text-amber mt-0.5">help</span>
+                    <span>Not sure about the scope or price? Open a <strong className="text-amber uppercase">Challenge</strong> to discuss it with the admin before deciding.</span>
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-4">
+              <Button onClick={() => approve(fr)} className="bg-bg-base text-brand-green hover:bg-bg-panel-alt border-bg-base hover:border-bg-base font-black">
+                APPROVE FEATURE
+              </Button>
+              {fr.is_base_feature && (
+                <Button
+                  variant="secondary"
+                  onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
+                >
+                  {challengeDecided ? "View Challenge" : "Challenge"}
+                </Button>
+              )}
+              <Button variant="danger" onClick={() => decline(fr)} className="bg-bg-base text-coral-red border-bg-base hover:border-bg-base shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:bg-coral-red hover:text-white font-bold">
+                DECLINE
+              </Button>
+            </div>
+          </div>
+        )}
+
         {fr.is_base_feature && !needsApproval && (
-          <div className="mt-6 border-t-2 border-dashed border-border-strong pt-4 flex items-center gap-3">
+          <div className="mt-8 pt-6 flex flex-wrap items-center gap-4">
             <Button
               variant="secondary"
               onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
             >
               {challengeOpen || challengeDecided ? "View Challenge" : "Challenge"}
             </Button>
-          </div>
-        )}
-
-        {needsApproval && (
-          <div className="mt-6 border-4 border-brand-green bg-brand-green/5 p-6 shadow-[4px_4px_0px_0px_var(--brand-green)]">
-            <p className="text-sm font-bold text-brand-green mb-2 uppercase tracking-widest flex items-center gap-2">
-              <span className="material-symbols-outlined text-lg">warning</span>
-              Approval Required
-            </p>
-            <p className="text-sm text-text-main mb-4 font-bold">
-              This feature requires your review. Approve to accept the stated hours and scope, or decline it.
-            </p>
-            {fr.is_base_feature && (
-              <p className="text-xs text-text-muted mb-4">
-                Not sure about the scope, hours, or price? Use Challenge to open a discussion with the admin before
-                deciding — it doesn&apos;t approve or decline the feature, it just lets you raise questions first.
-              </p>
-            )}
-            <div className="flex items-center gap-4">
-              <Button onClick={() => approve(fr)}>Approve Feature</Button>
-              {fr.is_base_feature && (
-                <Button
-                  variant="secondary"
-                  onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
-                >
-                  {challengeOpen || challengeDecided ? "View Challenge" : "Challenge"}
-                </Button>
-              )}
-              <Button variant="danger" onClick={() => decline(fr)}>
-                Decline Feature
-              </Button>
-            </div>
           </div>
         )}
       </div>
@@ -222,7 +277,7 @@ export default function ProjectFeaturesPage() {
           <EmptyState>No core base features assigned yet.</EmptyState>
         ) : (
           <div className="space-y-6">
-            {features.base_features.map(renderFeatureCard)}
+            {features.base_features.map(f => renderFeatureCard(f, "base"))}
           </div>
         )}
       </div>
@@ -234,8 +289,8 @@ export default function ProjectFeaturesPage() {
         {features.extra_features.length === 0 ? (
           <EmptyState>No extra features requested yet.</EmptyState>
         ) : (
-          <div className="space-y-6">
-            {features.extra_features.map(renderFeatureCard)}
+          <div className="space-y-6 mt-12">
+            {features.extra_features.map(f => renderFeatureCard(f, "extra"))}
           </div>
         )}
       </div>
@@ -281,6 +336,7 @@ function ChallengeModal({
 
   useEffect(() => {
     loadMessages();
+    markFeatureRequestRead(featureRequest.id);
   }, [featureRequest.id]);
 
   async function sendMessage() {

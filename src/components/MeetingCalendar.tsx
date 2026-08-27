@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Meeting, MeetingBlock, MeetingStatus, MeetingType } from "@/lib/types";
+import {
+  BlockedDate,
+  Meeting,
+  MeetingBlock,
+  MeetingStatus,
+  MeetingType,
+  RecurrenceFrequency,
+  RecurringMeetingBlockCreatePayload,
+} from "@/lib/types";
 import { formatApiError } from "@/lib/api";
-import { Alert, Button, Field, Input, Label, Modal, StatusBadge, Textarea } from "@/components/ui";
+import { Alert, Button, Field, Input, Label, Modal, Select, StatusBadge, Textarea } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /* Date helpers                                                       */
@@ -16,6 +24,17 @@ function startOfDay(d: Date): Date {
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
+
+export function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export type FetchBlockedDates = (rangeStart: Date, rangeEnd: Date) => Promise<BlockedDate[]>;
+
+export const MEETING_LINK_PATTERN = /^https:\/\/(meet\.google\.com\/|teams\.microsoft\.com\/)/;
 
 function generateMonthGrid(viewDate: Date): Date[] {
   const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
@@ -108,10 +127,12 @@ export function MiniCalendar({
   value,
   onChange,
   minDate,
+  disabledDates,
 }: {
   value: Date | null;
   onChange: (date: Date) => void;
   minDate: Date;
+  disabledDates?: Set<string>;
 }) {
   const [viewDate, setViewDate] = useState(value ?? new Date());
   const days = generateMonthGrid(viewDate);
@@ -147,7 +168,8 @@ export function MiniCalendar({
       <div className="grid grid-cols-7 gap-1">
         {days.map((date, i) => {
           const inMonth = date.getMonth() === viewDate.getMonth();
-          const disabled = !inMonth || startOfDay(date) < minDay;
+          const blocked = disabledDates?.has(toDateKey(date));
+          const disabled = !inMonth || startOfDay(date) < minDay || blocked;
           const selected = value && isSameDay(date, value);
           return (
             <button
@@ -155,6 +177,7 @@ export function MiniCalendar({
               key={i}
               disabled={disabled}
               onClick={() => onChange(date)}
+              title={blocked ? "Blocked" : undefined}
               className={`h-8 w-8 border font-data-mono text-xs transition-colors
                 ${disabled ? "border-transparent text-text-muted opacity-40" : "border-transparent text-text-main hover:border-brand-green"}
                 ${selected ? "bg-brand-green border-brand-green text-on-brand-green" : ""}`}
@@ -293,10 +316,10 @@ function TimeRangePicker({
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-4 font-data-mono text-[11px] text-text-muted">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 border border-border-strong bg-brand-green" /> Start
+          <span className="inline-block h-3 w-3 border border-border-strong bg-coral-red" /> Start
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 border border-brand-green/40 bg-brand-green/15" /> In between
+          <span className="inline-block h-3 w-3 border border-coral-red/40 bg-coral-red/15" /> In between
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 border border-border-strong bg-[#0d9488]" /> End
@@ -316,9 +339,9 @@ function TimeRangePicker({
             slotToDate(date, slot) < slotToDate(date, endSlot);
 
           let style = "bg-bg-panel-alt";
-          if (isStart) style = "bg-brand-green text-on-brand-green border-brand-green shadow-[3px_3px_0px_0px_var(--shadow-strong)]";
+          if (isStart) style = "bg-coral-red text-white border-coral-red shadow-[3px_3px_0px_0px_var(--shadow-strong)]";
           else if (isEnd) style = "bg-[#0d9488] text-white border-[#0d9488] shadow-[3px_3px_0px_0px_var(--shadow-strong)]";
-          else if (isInRange) style = "bg-brand-green/15 border-brand-green/40 text-brand-green";
+          else if (isInRange) style = "bg-coral-red/15 border-coral-red/40 text-coral-red";
 
           return (
             <button
@@ -346,7 +369,7 @@ function TimeRangePicker({
       </div>
       {startSlot && endSlot && (
         <p className="mt-3 font-data-mono text-sm text-text-main">
-          <span className="text-brand-green font-bold">{slotLabel(startSlot)}</span>
+          <span className="text-coral-red font-bold">{slotLabel(startSlot)}</span>
           <span className="text-text-muted mx-2">→</span>
           <span className="text-[#0d9488] font-bold">{slotLabel(endSlot)}</span>
         </p>
@@ -361,7 +384,7 @@ function TimeRangePicker({
 
 export interface MeetingActions {
   onCancel?: (m: Meeting) => Promise<void> | void;
-  onConfirm?: (m: Meeting, meetingLink: string) => Promise<void> | void;
+  onConfirm?: (m: Meeting, meetingLink: string, meetingCode: string) => Promise<void> | void;
   onDeny?: (m: Meeting, reason: string) => Promise<void> | void;
   onProposeReschedule?: (m: Meeting, start: Date, end: Date) => Promise<void> | void;
   onAcceptReschedule?: (m: Meeting) => Promise<void> | void;
@@ -392,6 +415,21 @@ function statusChipClass(status: MeetingStatus): string {
   }
 }
 
+function statusBgClass(status: MeetingStatus): string {
+  switch (status) {
+    case "confirmed":
+    case "completed":
+      return "bg-[#1E8A4F] text-white";
+    case "requested":
+    case "reschedule_pending":
+      return "bg-[#ffc107] text-[#2A2E33]";
+    case "denied":
+      return "bg-coral-red text-white";
+    default:
+      return "bg-text-muted text-white";
+  }
+}
+
 export function MeetingCalendarView({
   role,
   meetings,
@@ -399,6 +437,7 @@ export function MeetingCalendarView({
   labelFor,
   bookable,
   fetchBusyRanges,
+  fetchBlockedDates,
   blocks = [],
 }: {
   role: "client" | "admin";
@@ -407,6 +446,7 @@ export function MeetingCalendarView({
   labelFor: (m: Meeting) => string;
   bookable?: BookableConfig;
   fetchBusyRanges: FetchBusyRanges;
+  fetchBlockedDates?: FetchBlockedDates;
   blocks?: MeetingBlock[];
 }) {
   const [view, setView] = useState<"month" | "week" | "day">("month");
@@ -414,11 +454,22 @@ export function MeetingCalendarView({
   const [active, setActive] = useState<Meeting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bookingDate, setBookingDate] = useState<Date | null>(null);
+  const [blockedDates, setBlockedDates] = useState<Map<string, string | null>>(new Map());
 
   const today = new Date();
   const monthDays = useMemo(() => generateMonthGrid(currentDate), [currentDate]);
   const weekDays = useMemo(() => generateWeekDays(currentDate), [currentDate]);
   const minBookableDay = bookable ? startOfDay(bookable.minInstant) : null;
+
+  useEffect(() => {
+    if (!fetchBlockedDates) return;
+    const rangeStart = view === "month" ? monthDays[0] : view === "week" ? weekDays[0] : currentDate;
+    const rangeEnd = view === "month" ? monthDays[monthDays.length - 1] : view === "week" ? weekDays[6] : currentDate;
+    fetchBlockedDates(rangeStart, rangeEnd)
+      .then((dates) => setBlockedDates(new Map(dates.map((d) => [d.date, d.reason]))))
+      .catch(() => setBlockedDates(new Map()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentDate, fetchBlockedDates]);
 
   function meetingsOn(date: Date): Meeting[] {
     return meetings.filter((m) => isSameDay(meetingDisplayRange(m).start, date));
@@ -428,8 +479,13 @@ export function MeetingCalendarView({
     return blocks.filter((b) => isSameDay(new Date(b.start_datetime), date));
   }
 
+  function recurringBlockReasonOn(date: Date): string | null | undefined {
+    const key = toDateKey(date);
+    return blockedDates.has(key) ? blockedDates.get(key) : undefined;
+  }
+
   function isBookableDay(date: Date): boolean {
-    return !!minBookableDay && startOfDay(date) >= minBookableDay;
+    return !!minBookableDay && startOfDay(date) >= minBookableDay && !blockedDates.has(toDateKey(date));
   }
 
   function navigate(dir: "prev" | "next") {
@@ -505,8 +561,8 @@ export function MeetingCalendarView({
               const bookableDay = isBookableDay(date);
               return (
                 <div key={i} className={`min-h-[110px] p-2 ${inMonth ? "bg-bg-panel-alt" : "bg-bg-panel-alt opacity-40"}`}>
-                  <div className="mb-2 flex items-center justify-between border-b-2 border-border-subtle pb-1.5">
-                    <div className={`inline-flex h-7 w-7 items-center justify-center font-data-mono text-sm font-black ${isToday ? "bg-brand-green text-on-brand-green" : "border-2 border-border-strong text-text-main"}`}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className={`inline-flex h-7 w-7 items-center justify-center font-data-mono text-sm font-black ${isToday ? "bg-brand-green text-on-brand-green" : "text-text-main"}`}>
                       {date.getDate()}
                     </div>
                     {bookableDay && (
@@ -520,21 +576,29 @@ export function MeetingCalendarView({
                       </button>
                     )}
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5 mt-1">
+                    {recurringBlockReasonOn(date) !== undefined && (
+                      <div
+                        title={recurringBlockReasonOn(date) ?? "Recurring block"}
+                        className="block w-full truncate border-l-2 border-text-muted bg-text-muted/5 px-1.5 py-0.5 text-left font-data-mono text-[9px] text-text-muted"
+                      >
+                        Blocked
+                      </div>
+                    )}
                     {dayBlocks.map((b) => (
                       <div
                         key={`block-${b.id}`}
                         title={b.reason ?? "Blocked"}
-                        className="block w-full truncate border border-text-muted bg-text-muted/10 px-1 py-0.5 text-left font-data-mono text-[10px] text-text-muted"
+                        className="block w-full truncate border-l-2 border-text-muted bg-text-muted/5 px-1.5 py-0.5 text-left font-data-mono text-[9px] text-text-muted"
                       >
-                        ⛔ {formatTimeRange(new Date(b.start_datetime), new Date(b.end_datetime))}
+                        {formatTimeRange(new Date(b.start_datetime), new Date(b.end_datetime))}
                       </div>
                     ))}
                     {dayMeetings.slice(0, 3).map((m) => (
                       <button
                         key={m.id}
                         onClick={() => openDetails(m)}
-                        className={`block w-full truncate border px-1 py-0.5 text-left font-data-mono text-[10px] ${statusChipClass(m.status)}`}
+                        className={`block w-full truncate px-1.5 py-1 text-left font-data-mono text-[10px] uppercase font-bold tracking-wider ${statusBgClass(m.status)} shadow-[2px_2px_0px_0px_var(--shadow-strong)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_var(--shadow-strong)] transition-all`}
                       >
                         {labelFor(m)}
                       </button>
@@ -578,6 +642,14 @@ export function MeetingCalendarView({
                       + Book
                     </button>
                   )}
+                  {recurringBlockReasonOn(date) !== undefined && (
+                    <div
+                      title={recurringBlockReasonOn(date) ?? "Recurring block"}
+                      className="block w-full border-l-4 border-text-muted bg-text-muted/10 px-2 py-1.5 text-left font-data-mono text-[10px] text-text-muted"
+                    >
+                      ⛔ Recurring block
+                    </div>
+                  )}
                   {blocksOn(date).map((b) => (
                     <div
                       key={`block-${b.id}`}
@@ -617,10 +689,22 @@ export function MeetingCalendarView({
             )}
           </div>
           <div className="max-h-[600px] divide-y divide-border-subtle overflow-y-auto">
-            {meetingsOn(currentDate).length === 0 && blocksOn(currentDate).length === 0 ? (
+            {meetingsOn(currentDate).length === 0 &&
+            blocksOn(currentDate).length === 0 &&
+            recurringBlockReasonOn(currentDate) === undefined ? (
               <p className="p-6 text-center font-data-mono text-text-muted">No meetings this day.</p>
             ) : (
               <>
+                {recurringBlockReasonOn(currentDate) !== undefined && (
+                  <div className="flex w-full items-center justify-between p-4 text-left text-text-muted">
+                    <div>
+                      <p className="font-data-mono text-base font-bold">⛔ Recurring block</p>
+                      {recurringBlockReasonOn(currentDate) && (
+                        <p className="mt-1 truncate text-xs">{recurringBlockReasonOn(currentDate)}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {blocksOn(currentDate).map((b) => (
                   <div key={`block-${b.id}`} className="flex w-full items-center justify-between p-4 text-left text-text-muted">
                     <div>
@@ -659,6 +743,7 @@ export function MeetingCalendarView({
         setError={setError}
         onClose={() => setActive(null)}
         fetchBusyRanges={fetchBusyRanges}
+        fetchBlockedDates={fetchBlockedDates}
       />
       {bookable && (
         <BookingModal date={bookingDate} config={bookable} onClose={() => setBookingDate(null)} fetchBusyRanges={fetchBusyRanges} />
@@ -747,16 +832,21 @@ function BookingModal({
   return (
     <Modal open={!!date} onClose={onClose} title={`Book ${date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`}>
       {sent ? (
-        <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <div className="flex flex-col items-center gap-6 py-10 text-center">
           <div
-            className={`flex h-16 w-16 items-center justify-center border-4 border-[#1E8A4F] bg-[#1E8A4F]/10 text-3xl text-[#1E8A4F] transition-all duration-500 ${
-              sentVisible ? "scale-100 opacity-100" : "scale-50 opacity-0"
+            className={`flex h-20 w-20 items-center justify-center border-4 border-border-strong bg-brand-green shadow-[6px_6px_0px_0px_var(--shadow-strong)] transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+              sentVisible ? "scale-100 rotate-0 opacity-100" : "scale-50 -rotate-12 opacity-0"
             }`}
           >
-            ✓
+            <span
+              className="material-symbols-outlined text-5xl text-on-brand-green"
+              style={{ fontVariationSettings: "'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 48" }}
+            >
+              check
+            </span>
           </div>
           <div className={`transition-all delay-150 duration-500 ${sentVisible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"}`}>
-            <p className="font-label-caps text-label-caps uppercase tracking-[0.1em] text-text-main">Appointment Request Sent</p>
+            <p className="font-display-xl text-xl font-black uppercase tracking-[0.1em] text-text-main">Appointment Request Sent</p>
             <p className="mt-2 text-sm text-text-muted">Hang tight — the admin needs to confirm this slot before it's locked in.</p>
           </div>
         </div>
@@ -814,6 +904,7 @@ export function MeetingDetailsModal({
   setError,
   onClose,
   fetchBusyRanges,
+  fetchBlockedDates,
 }: {
   role: "client" | "admin";
   meeting: Meeting | null;
@@ -822,18 +913,22 @@ export function MeetingDetailsModal({
   setError: (e: string | null) => void;
   onClose: () => void;
   fetchBusyRanges: FetchBusyRanges;
+  fetchBlockedDates?: FetchBlockedDates;
 }) {
   const [meetingLink, setMeetingLink] = useState("");
+  const [meetingCode, setMeetingCode] = useState("");
   const [reason, setReason] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState<Date | null>(null);
   const [rescheduleStartSlot, setRescheduleStartSlot] = useState("");
   const [rescheduleEndSlot, setRescheduleEndSlot] = useState("");
   const [rescheduleBusyRanges, setRescheduleBusyRanges] = useState<TimeRange[]>([]);
+  const [rescheduleDisabledDates, setRescheduleDisabledDates] = useState<Set<string>>(new Set());
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [showDenyInput, setShowDenyInput] = useState(false);
 
   useEffect(() => {
     setMeetingLink(meeting?.meeting_link ?? "");
+    setMeetingCode(meeting?.meeting_code ?? "");
     setReason("");
     setRescheduleDate(null);
     setRescheduleStartSlot("");
@@ -847,6 +942,16 @@ export function MeetingDetailsModal({
     if (!rescheduleDate || !meeting) return;
     fetchBusyRanges(rescheduleDate, meeting.id).then(setRescheduleBusyRanges).catch(() => setRescheduleBusyRanges([]));
   }, [rescheduleDate, meeting, fetchBusyRanges]);
+
+  useEffect(() => {
+    if (!showReschedulePicker || !fetchBlockedDates) return;
+    const horizonStart = new Date();
+    const horizonEnd = new Date();
+    horizonEnd.setDate(horizonEnd.getDate() + 180);
+    fetchBlockedDates(horizonStart, horizonEnd)
+      .then((dates) => setRescheduleDisabledDates(new Set(dates.map((d) => d.date))))
+      .catch(() => setRescheduleDisabledDates(new Set()));
+  }, [showReschedulePicker, fetchBlockedDates]);
 
   if (!meeting) return null;
   const activeMeeting = meeting;
@@ -888,7 +993,11 @@ export function MeetingDetailsModal({
   const displayRange = meetingDisplayRange(meeting);
 
   const reschedulePicker = showReschedulePicker && (
-    <div className="space-y-3">
+    <div className="mt-4 p-4 border-2 border-border-strong bg-bg-base space-y-4 shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+      <h4 className="font-label-caps text-xs tracking-widest uppercase text-text-main flex items-center gap-2">
+        <span className="material-symbols-outlined text-base">edit_calendar</span>
+        Select New Time
+      </h4>
       <MiniCalendar
         value={rescheduleDate}
         onChange={(d) => {
@@ -897,6 +1006,7 @@ export function MeetingDetailsModal({
           setRescheduleEndSlot("");
         }}
         minDate={minRescheduleDay}
+        disabledDates={rescheduleDisabledDates}
       />
       {rescheduleDate && (
         <TimeRangePicker
@@ -912,127 +1022,234 @@ export function MeetingDetailsModal({
           busyRanges={rescheduleBusyRanges}
         />
       )}
-      <Button onClick={submitReschedule} disabled={!canSubmitReschedule}>
-        Submit Reschedule Proposal
-      </Button>
+      <div className="pt-2">
+        <Button onClick={submitReschedule} disabled={!canSubmitReschedule} className="w-full">
+          Submit Reschedule Proposal
+        </Button>
+      </div>
     </div>
   );
+
+  const monthStr = displayRange.start.toLocaleDateString("en-US", { month: "short" });
+  const dayStr = displayRange.start.getDate();
+  const statusLabel = meeting.status === "reschedule_pending" ? "Proposed Time" : meeting.confirmed_start_datetime ? "Confirmed Time" : "Requested Time";
+
+  // Status mapping for visual styles
+  const statusStyles: Record<string, { bg: string, border: string, text: string, icon: string }> = {
+    confirmed: { bg: "bg-[#1E8A4F]/10", border: "border-[#1E8A4F]", text: "text-[#1E8A4F]", icon: "check_circle" },
+    completed: { bg: "bg-[#1E8A4F]/10", border: "border-[#1E8A4F]", text: "text-[#1E8A4F]", icon: "task_alt" },
+    requested: { bg: "bg-[#ffc107]/10", border: "border-[#ffc107]", text: "text-[#ffc107]", icon: "pending_actions" },
+    reschedule_pending: { bg: "bg-[#ffc107]/10", border: "border-[#ffc107]", text: "text-[#ffc107]", icon: "update" },
+    denied: { bg: "bg-coral-red/10", border: "border-coral-red", text: "text-coral-red", icon: "cancel" },
+    cancelled: { bg: "bg-text-muted/10", border: "border-text-muted", text: "text-text-muted", icon: "block" },
+  };
+  const currentStatusStyle = statusStyles[meeting.status] || statusStyles.requested;
 
   return (
     <Modal open={!!meeting} onClose={onClose} title={`Meeting #${meeting.id}`}>
       {error && <Alert>{error}</Alert>}
 
-      <div className="mb-4 flex items-center justify-between">
-        <StatusBadge status={meeting.status} />
-        <span className="font-data-mono text-xs uppercase text-text-muted">{meeting.meeting_type}</span>
-      </div>
+      <div className="flex flex-col gap-6">
+        {/* Status and Type Banner */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b-4 border-border-strong pb-4">
+          <div className={`flex items-center gap-2 px-3 py-1.5 border-2 ${currentStatusStyle.border} ${currentStatusStyle.bg}`}>
+            <span className={`material-symbols-outlined text-xl ${currentStatusStyle.text}`}>{currentStatusStyle.icon}</span>
+            <span className={`font-data-mono text-xs font-bold uppercase tracking-wider ${currentStatusStyle.text}`}>
+              {meeting.status.replace(/_/g, " ")}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 bg-bg-panel border-2 border-border-strong px-3 py-1.5">
+            <span className="material-symbols-outlined text-text-inverse opacity-80 text-xl">
+              {meeting.meeting_type === "online" ? "videocam" : "location_on"}
+            </span>
+            <span className="font-data-mono text-xs font-bold uppercase tracking-wider text-text-inverse">
+              {meeting.meeting_type}
+            </span>
+          </div>
+        </div>
 
-      <div className="mb-4 space-y-2">
-        <p className="font-data-mono text-base text-text-main">
-          <span className="text-xs uppercase text-text-muted">
-            {meeting.status === "reschedule_pending" ? "Proposed" : meeting.confirmed_start_datetime ? "Confirmed" : "Requested"}:{" "}
-          </span>
-          <span className="font-bold tabular-nums">
-            {formatDateTime(displayRange.start)} – {formatTime(displayRange.end)}
-          </span>
-        </p>
-        <p className="text-sm text-text-muted">{meeting.agenda}</p>
+        {/* Date & Time Block */}
+        <div className="flex gap-4 items-center bg-bg-panel-alt p-4 border-2 border-border-strong shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+          <div className="flex flex-col items-center justify-center border-2 border-border-strong bg-bg-panel w-16 h-16 shrink-0">
+            <span className="text-[10px] uppercase font-label-caps text-text-inverse tracking-widest">{monthStr}</span>
+            <span className="text-2xl font-black font-data-mono text-brand-green leading-none">{dayStr}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] text-text-muted uppercase tracking-widest font-label-caps mb-1">{statusLabel}</div>
+            <div className="text-base sm:text-lg font-bold font-data-mono text-text-main truncate">
+              {formatTime(displayRange.start)} – {formatTime(displayRange.end)}
+            </div>
+            <div className="text-xs font-data-mono text-text-muted mt-0.5 truncate">
+              {displayRange.start.toLocaleDateString("en-US", { weekday: "long", year: "numeric" })}
+            </div>
+          </div>
+        </div>
+
+        {/* Link / Location Area (if online & confirmed) */}
         {meeting.meeting_link && meeting.status === "confirmed" && (
-          <a href={meeting.meeting_link} target="_blank" className="block font-data-mono text-sm text-brand-green underline">
-            Join meeting link
+          <a
+            href={meeting.meeting_link}
+            target="_blank"
+            rel="noreferrer"
+            className="group flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-2 border-border-strong bg-brand-green/5 hover:bg-brand-green/10 transition-colors cursor-pointer shadow-[4px_4px_0px_0px_var(--shadow-strong)]"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 flex items-center justify-center bg-brand-green text-on-brand-green border-2 border-border-strong shrink-0">
+                <span className="material-symbols-outlined">link</span>
+              </div>
+              <div className="min-w-0">
+                <div className="font-label-caps text-[10px] text-brand-green uppercase tracking-widest mb-0.5">Join Meeting</div>
+                <div className="font-data-mono text-sm text-text-main font-bold truncate">Click to open video call</div>
+              </div>
+            </div>
+            {meeting.meeting_code && (
+              <div className="sm:text-right border-t-2 sm:border-t-0 sm:border-l-2 border-border-strong pt-2 sm:pt-0 sm:pl-4 mt-2 sm:mt-0 w-full sm:w-auto">
+                <div className="font-label-caps text-[10px] text-text-muted uppercase tracking-widest mb-0.5">Meeting Code</div>
+                <div className="font-data-mono text-sm font-bold text-text-main">{meeting.meeting_code}</div>
+              </div>
+            )}
           </a>
         )}
-        {meeting.denial_reason && (
-          <p className="border-l-4 border-coral-red bg-bg-panel-alt p-3 text-sm text-text-main">
-            <span className="block font-label-caps text-[10px] uppercase tracking-[0.1em] text-coral-red">Denial Reason</span>
-            {meeting.denial_reason}
+
+        {/* Agenda */}
+        <div className="space-y-2">
+          <h4 className="font-label-caps text-[10px] text-text-muted uppercase tracking-widest flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-sm">subject</span> Agenda / Notes
+          </h4>
+          <p className="font-data-mono text-sm text-text-main p-4 bg-border-subtle/10 border-l-4 border-border-strong leading-relaxed whitespace-pre-wrap">
+            {meeting.agenda || "No agenda provided."}
           </p>
+        </div>
+
+        {/* Denial Reason */}
+        {meeting.denial_reason && (
+          <div className="space-y-2">
+             <h4 className="font-label-caps text-[10px] text-coral-red uppercase tracking-widest flex items-center gap-1.5">
+               <span className="material-symbols-outlined text-sm">warning</span> Denial Reason
+             </h4>
+             <p className="font-data-mono text-sm text-text-main p-4 bg-coral-red/5 border-l-4 border-coral-red leading-relaxed">
+               {meeting.denial_reason}
+             </p>
+          </div>
         )}
+
+        {/* ACTIONS SECTION */}
+        <div className="mt-4 border-t-4 border-border-strong pt-6 space-y-6">
+          {/* --- ADMIN actions --- */}
+          {isAdmin && (meeting.status === "requested" || (meeting.status === "reschedule_pending" && pendingByClient)) && (
+            <div className="space-y-4">
+              {meeting.meeting_type === "online" && (
+                <div className="grid gap-4 sm:grid-cols-2 bg-bg-panel p-4 border-2 border-border-strong">
+                  <Field className="mb-0">
+                    <Label>Meeting Link</Label>
+                    <Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/..." className="h-10 text-xs" />
+                    {meetingLink.length > 0 && !MEETING_LINK_PATTERN.test(meetingLink.trim()) && (
+                      <p className="mt-1 font-data-mono text-[10px] text-coral-red">
+                        Must start with valid meet/teams url
+                      </p>
+                    )}
+                  </Field>
+                  <Field className="mb-0">
+                    <Label>Meeting Code</Label>
+                    <Input value={meetingCode} onChange={(e) => setMeetingCode(e.target.value)} placeholder="e.g. abc-defg-hij" className="h-10 text-xs" />
+                  </Field>
+                </div>
+              )}
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={() => run(() => actions.onConfirm?.(meeting, meetingLink, meetingCode))}
+                  disabled={
+                    meeting.meeting_type === "online" &&
+                    !(MEETING_LINK_PATTERN.test(meetingLink.trim()) && meetingCode.trim().length > 0)
+                  }
+                  className="flex-1"
+                >
+                  Confirm Slot
+                </Button>
+                <Button variant="danger" onClick={() => setShowDenyInput((s) => !s)} className="flex-1">
+                  Deny Request
+                </Button>
+              </div>
+              
+              {showDenyInput && (
+                <div className="p-4 border-2 border-coral-red bg-coral-red/5 space-y-3 mt-2">
+                  <Field className="mb-0">
+                    <Label className="text-coral-red">Reason for Denial</Label>
+                    <Textarea value={reason} onChange={(e) => setReason(e.target.value)} className="min-h-[80px]" />
+                  </Field>
+                  <Button variant="danger" onClick={() => run(() => actions.onDeny?.(meeting, reason))} disabled={!reason.trim()}>
+                    Confirm Denial
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isAdmin && meeting.status === "confirmed" && (
+            <div>
+              <Button variant="secondary" onClick={() => setShowReschedulePicker((s) => !s)} className="w-full sm:w-auto">
+                Propose Reschedule
+              </Button>
+              {reschedulePicker}
+            </div>
+          )}
+
+          {isAdmin && meeting.status === "reschedule_pending" && pendingByAdmin && (
+            <div className="flex items-center gap-2 p-3 bg-bg-panel-alt border-l-4 border-warning">
+              <span className="material-symbols-outlined text-warning">hourglass_empty</span>
+              <p className="font-data-mono text-xs text-text-main">Waiting on client to accept or deny proposal.</p>
+            </div>
+          )}
+
+          {/* --- CLIENT actions --- */}
+          {!isAdmin && meeting.status === "reschedule_pending" && pendingByAdmin && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button onClick={() => run(() => actions.onAcceptReschedule?.(meeting))} className="flex-1">Accept Proposal</Button>
+                <Button variant="danger" onClick={() => setShowDenyInput((s) => !s)} className="flex-1">
+                  Deny Proposal
+                </Button>
+              </div>
+              {showDenyInput && (
+                <div className="p-4 border-2 border-coral-red bg-coral-red/5 space-y-3 mt-2">
+                  <Field className="mb-0">
+                    <Label className="text-coral-red">Reason for Denial</Label>
+                    <Textarea value={reason} onChange={(e) => setReason(e.target.value)} className="min-h-[80px]" />
+                  </Field>
+                  <Button variant="danger" onClick={() => run(() => actions.onDenyReschedule?.(meeting, reason))} disabled={!reason.trim()}>
+                    Confirm Denial
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isAdmin && meeting.status === "reschedule_pending" && pendingByClient && (
+            <div className="flex items-center gap-2 p-3 bg-bg-panel-alt border-l-4 border-warning">
+              <span className="material-symbols-outlined text-warning">hourglass_empty</span>
+              <p className="font-data-mono text-xs text-text-main">Waiting on admin to confirm or deny proposal.</p>
+            </div>
+          )}
+
+          {!isAdmin && meeting.status === "confirmed" && (
+            <div>
+              <Button variant="secondary" onClick={() => setShowReschedulePicker((s) => !s)} className="w-full sm:w-auto">
+                Propose Reschedule (Emergency)
+              </Button>
+              {reschedulePicker}
+            </div>
+          )}
+
+          {!isAdmin && (meeting.status === "requested" || meeting.status === "confirmed") && (
+            <div className="flex justify-end pt-4">
+              <Button variant="ghost" onClick={() => run(() => actions.onCancel?.(meeting))} className="text-coral-red hover:text-coral-red hover:bg-coral-red/10">
+                Cancel Meeting
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
-
-      {/* --- ADMIN actions --- */}
-      {isAdmin && (meeting.status === "requested" || (meeting.status === "reschedule_pending" && pendingByClient)) && (
-        <div className="space-y-3 border-t-2 border-border-subtle pt-4">
-          <Field>
-            <Label>Meeting Link (required to confirm)</Label>
-            <Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/..." />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => run(() => actions.onConfirm?.(meeting, meetingLink))}>Confirm Slot</Button>
-            <Button variant="danger" onClick={() => setShowDenyInput((s) => !s)}>
-              Deny
-            </Button>
-          </div>
-          {showDenyInput && (
-            <div className="space-y-2">
-              <Field>
-                <Label>Reason</Label>
-                <Textarea value={reason} onChange={(e) => setReason(e.target.value)} />
-              </Field>
-              <Button variant="danger" onClick={() => run(() => actions.onDeny?.(meeting, reason))} disabled={!reason.trim()}>
-                Confirm Denial
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isAdmin && meeting.status === "confirmed" && (
-        <div className="space-y-3 border-t-2 border-border-subtle pt-4">
-          <Button variant="secondary" onClick={() => setShowReschedulePicker((s) => !s)}>
-            Propose Reschedule
-          </Button>
-          {reschedulePicker}
-        </div>
-      )}
-
-      {isAdmin && meeting.status === "reschedule_pending" && pendingByAdmin && (
-        <p className="border-t-2 border-border-subtle pt-4 font-data-mono text-sm text-text-muted">Waiting on client to accept or deny.</p>
-      )}
-
-      {/* --- CLIENT actions --- */}
-      {!isAdmin && meeting.status === "reschedule_pending" && pendingByAdmin && (
-        <div className="space-y-3 border-t-2 border-border-subtle pt-4">
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => run(() => actions.onAcceptReschedule?.(meeting))}>Accept Proposal</Button>
-            <Button variant="danger" onClick={() => setShowDenyInput((s) => !s)}>
-              Deny
-            </Button>
-          </div>
-          {showDenyInput && (
-            <div className="space-y-2">
-              <Field>
-                <Label>Reason</Label>
-                <Textarea value={reason} onChange={(e) => setReason(e.target.value)} />
-              </Field>
-              <Button variant="danger" onClick={() => run(() => actions.onDenyReschedule?.(meeting, reason))} disabled={!reason.trim()}>
-                Confirm Denial
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!isAdmin && meeting.status === "reschedule_pending" && pendingByClient && (
-        <p className="border-t-2 border-border-subtle pt-4 font-data-mono text-sm text-text-muted">Waiting on admin to confirm or deny.</p>
-      )}
-
-      {!isAdmin && meeting.status === "confirmed" && (
-        <div className="space-y-3 border-t-2 border-border-subtle pt-4">
-          <Button variant="secondary" onClick={() => setShowReschedulePicker((s) => !s)}>
-            Propose Reschedule (Emergency)
-          </Button>
-          {reschedulePicker}
-        </div>
-      )}
-
-      {!isAdmin && (meeting.status === "requested" || meeting.status === "confirmed") && (
-        <div className="mt-4 border-t-2 border-border-subtle pt-4">
-          <Button variant="ghost" onClick={() => run(() => actions.onCancel?.(meeting))}>
-            Cancel Meeting
-          </Button>
-        </div>
-      )}
     </Modal>
   );
 }
@@ -1041,36 +1258,79 @@ export function MeetingDetailsModal({
 /* Admin: block off a time range                                      */
 /* ------------------------------------------------------------------ */
 
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const BLOCKED_DATES_HORIZON_DAYS = 180;
+
 export function BlockTimeModal({
   open,
   onClose,
   onCreate,
+  onCreateRecurring,
+  onPreviewConflicts,
   minDate,
   fetchBusyRanges,
+  fetchBlockedDates,
+  initialMode = "one-time",
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (start: Date, end: Date, reason: string) => Promise<void> | void;
+  onCreateRecurring: (payload: RecurringMeetingBlockCreatePayload) => Promise<void> | void;
+  onPreviewConflicts: (payload: RecurringMeetingBlockCreatePayload) => Promise<Meeting[]>;
   minDate: Date;
   fetchBusyRanges: FetchBusyRanges;
+  fetchBlockedDates?: FetchBlockedDates;
+  initialMode?: "one-time" | "recurring";
 }) {
+  const [mode, setMode] = useState<"one-time" | "recurring">(initialMode);
   const [date, setDate] = useState<Date | null>(null);
   const [startSlot, setStartSlot] = useState("");
   const [endSlot, setEndSlot] = useState("");
   const [reason, setReason] = useState("");
   const [busyRanges, setBusyRanges] = useState<TimeRange[]>([]);
+  const [disabledDates, setDisabledDates] = useState<Set<string>>(new Set());
+
+  const [frequency, setFrequency] = useState<RecurrenceFrequency>("weekly");
+  const [dayOfWeek, setDayOfWeek] = useState(0);
+  const [dayOfMonth, setDayOfMonth] = useState(1);
+  const [month, setMonth] = useState(1);
+  const [untilDate, setUntilDate] = useState("");
+  const [recurringReason, setRecurringReason] = useState("");
+  const [previewConflicts, setPreviewConflicts] = useState<Meeting[] | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setMode(initialMode);
     setDate(null);
     setStartSlot("");
     setEndSlot("");
     setReason("");
     setBusyRanges([]);
+    setFrequency("weekly");
+    setDayOfWeek(0);
+    setDayOfMonth(1);
+    setMonth(1);
+    setUntilDate("");
+    setRecurringReason("");
+    setPreviewConflicts(null);
     setError(null);
-  }, [open]);
+    if (fetchBlockedDates) {
+      const horizonStart = new Date();
+      const horizonEnd = new Date();
+      horizonEnd.setDate(horizonEnd.getDate() + BLOCKED_DATES_HORIZON_DAYS);
+      fetchBlockedDates(horizonStart, horizonEnd)
+        .then((dates) => setDisabledDates(new Set(dates.map((d) => d.date))))
+        .catch(() => setDisabledDates(new Set()));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialMode]);
 
   useEffect(() => {
     if (!date) return;
@@ -1079,10 +1339,14 @@ export function BlockTimeModal({
 
   if (!open) return null;
 
-  const canSubmit = !!date && !!startSlot && !!endSlot && slotToDate(date, endSlot) > slotToDate(date, startSlot);
+  const canSubmitOneTime = !!date && !!startSlot && !!endSlot && slotToDate(date, endSlot) > slotToDate(date, startSlot);
+  const canSubmitRecurring =
+    (frequency === "weekly" && dayOfWeek >= 0 && dayOfWeek <= 6) ||
+    (frequency === "monthly" && dayOfMonth >= 1 && dayOfMonth <= 31) ||
+    (frequency === "yearly" && dayOfMonth >= 1 && dayOfMonth <= 31 && month >= 1 && month <= 12);
 
-  async function submit() {
-    if (!date || !canSubmit) return;
+  async function submitOneTime() {
+    if (!date || !canSubmitOneTime) return;
     try {
       setSubmitting(true);
       setError(null);
@@ -1095,42 +1359,199 @@ export function BlockTimeModal({
     }
   }
 
+  function buildRecurringPayload(): RecurringMeetingBlockCreatePayload {
+    return {
+      frequency,
+      day_of_week: frequency === "weekly" ? dayOfWeek : null,
+      day_of_month: frequency === "monthly" || frequency === "yearly" ? dayOfMonth : null,
+      month: frequency === "yearly" ? month : null,
+      until: untilDate || null,
+      reason: recurringReason || null,
+    };
+  }
+
+  async function submitRecurring() {
+    if (!canSubmitRecurring) return;
+    const payload = buildRecurringPayload();
+    try {
+      setSubmitting(true);
+      setError(null);
+      if (previewConflicts === null) {
+        const conflicts = await onPreviewConflicts(payload);
+        if (conflicts.length === 0) {
+          await onCreateRecurring(payload);
+          onClose();
+        } else {
+          setPreviewConflicts(conflicts);
+        }
+      } else {
+        await onCreateRecurring(payload);
+        onClose();
+      }
+    } catch (err) {
+      setError(formatApiError(err, "Could not create recurring block"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Block Time Off">
       {error && <Alert>{error}</Alert>}
+
       <Field>
-        <Label>Date</Label>
-        <MiniCalendar
-          value={date}
-          onChange={(d) => {
-            setDate(d);
-            setStartSlot("");
-            setEndSlot("");
-          }}
-          minDate={minDate}
-        />
+        <div className="inline-flex border-2 border-border-strong">
+          {(["one-time", "recurring"] as const).map((m) => (
+            <button
+              type="button"
+              key={m}
+              onClick={() => {
+                setMode(m);
+                setPreviewConflicts(null);
+                setError(null);
+              }}
+              className={`px-5 py-2 font-label-caps text-[11px] uppercase tracking-[0.1em] transition-all
+                ${mode === m ? "bg-brand-green text-on-brand-green" : "bg-bg-panel-alt text-text-main hover:bg-bg-panel-alt/70"}`}
+            >
+              {m === "one-time" ? "One-Time" : "Recurring"}
+            </button>
+          ))}
+        </div>
       </Field>
-      {date && (
-        <TimeRangePicker
-          date={date}
-          startSlot={startSlot}
-          endSlot={endSlot}
-          onStartChange={(slot) => {
-            setStartSlot(slot);
-            setEndSlot("");
-          }}
-          onEndChange={setEndSlot}
-          minDateTime={startOfDay(date)}
-          busyRanges={busyRanges}
-        />
+
+      {mode === "one-time" ? (
+        <>
+          <Field>
+            <Label>Date</Label>
+            <MiniCalendar
+              value={date}
+              onChange={(d) => {
+                setDate(d);
+                setStartSlot("");
+                setEndSlot("");
+              }}
+              minDate={minDate}
+              disabledDates={disabledDates}
+            />
+          </Field>
+          {date && (
+            <TimeRangePicker
+              date={date}
+              startSlot={startSlot}
+              endSlot={endSlot}
+              onStartChange={(slot) => {
+                setStartSlot(slot);
+                setEndSlot("");
+              }}
+              onEndChange={setEndSlot}
+              minDateTime={startOfDay(date)}
+              busyRanges={busyRanges}
+            />
+          )}
+          <Field>
+            <Label>Reason (optional)</Label>
+            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Out of office" />
+          </Field>
+          <Button onClick={submitOneTime} disabled={!canSubmitOneTime || submitting}>
+            {submitting ? "Blocking..." : "Block This Time"}
+          </Button>
+        </>
+      ) : (
+        <>
+          <Field>
+            <Label>Frequency</Label>
+            <Select
+              value={frequency}
+              onChange={(e) => {
+                setFrequency(e.target.value as RecurrenceFrequency);
+                setPreviewConflicts(null);
+              }}
+            >
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </Select>
+          </Field>
+
+          {frequency === "weekly" && (
+            <Field>
+              <Label>Day of Week</Label>
+              <Select value={dayOfWeek} onChange={(e) => { setDayOfWeek(Number(e.target.value)); setPreviewConflicts(null); }}>
+                {WEEKDAY_NAMES.map((name, i) => (
+                  <option key={i} value={i}>{name}</option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {frequency === "monthly" && (
+            <Field>
+              <Label>Day of Month</Label>
+              <Input
+                type="number"
+                min={1}
+                max={31}
+                value={dayOfMonth}
+                onChange={(e) => { setDayOfMonth(Number(e.target.value)); setPreviewConflicts(null); }}
+              />
+              <p className="mt-1 font-data-mono text-xs text-text-muted">
+                If a month is shorter than this, the block applies on that month&apos;s last day instead.
+              </p>
+            </Field>
+          )}
+
+          {frequency === "yearly" && (
+            <>
+              <Field>
+                <Label>Month</Label>
+                <Select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setPreviewConflicts(null); }}>
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={i} value={i + 1}>{name}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field>
+                <Label>Day</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={dayOfMonth}
+                  onChange={(e) => { setDayOfMonth(Number(e.target.value)); setPreviewConflicts(null); }}
+                />
+                <p className="mt-1 font-data-mono text-xs text-text-muted">
+                  If the target month is shorter than this, the block applies on that month&apos;s last day instead.
+                </p>
+              </Field>
+            </>
+          )}
+
+          <Field>
+            <Label>Ends On (optional — leave blank to recur indefinitely)</Label>
+            <Input type="date" value={untilDate} onChange={(e) => { setUntilDate(e.target.value); setPreviewConflicts(null); }} />
+          </Field>
+
+          <Field>
+            <Label>Reason (optional)</Label>
+            <Textarea value={recurringReason} onChange={(e) => setRecurringReason(e.target.value)} placeholder="e.g. Closed every Sunday" />
+          </Field>
+
+          {previewConflicts !== null && previewConflicts.length > 0 && (
+            <Alert kind="warning">
+              {previewConflicts.length} existing meeting(s) fall on this pattern — creating won&apos;t affect them, but
+              future slots on matching dates will be blocked.
+            </Alert>
+          )}
+
+          <Button onClick={submitRecurring} disabled={!canSubmitRecurring || submitting}>
+            {submitting
+              ? "Saving..."
+              : previewConflicts && previewConflicts.length > 0
+                ? "Create Anyway"
+                : "Create Recurring Rule"}
+          </Button>
+        </>
       )}
-      <Field>
-        <Label>Reason (optional)</Label>
-        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Out of office" />
-      </Field>
-      <Button onClick={submit} disabled={!canSubmit || submitting}>
-        {submitting ? "Blocking..." : "Block This Time"}
-      </Button>
     </Modal>
   );
 }

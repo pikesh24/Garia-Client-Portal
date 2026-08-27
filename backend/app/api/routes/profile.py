@@ -5,6 +5,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import ProfileUpdateRequest, UserOut
+from app.services.realtime import manager
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -24,4 +25,5 @@ def update_profile(
     current_user.full_name = payload.full_name
     db.commit()
     db.refresh(current_user)
+    manager.notify_user("users", current_user.id)
     return current_user

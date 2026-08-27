@@ -21,6 +21,7 @@ class Meeting(Base, TimestampMixin):
     )
 
     meeting_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    meeting_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # The currently agreed/locked-in range. Set once the admin confirms a slot;
     # acts as the anchor that any future reschedule proposal must land strictly after.

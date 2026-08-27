@@ -1,37 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { API_BASE_URL, apiRequest, ApiError, fileUrl, getAccessToken } from "@/lib/api";
-import { Ticket, TicketStatus } from "@/lib/types";
-import { Alert, Button, EmptyState, Field, Label, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { apiRequest, ApiError, fileUrl } from "@/lib/api";
+import { Ticket, User } from "@/lib/types";
+import { Alert, Button, EmptyState, PageHeader, Select, StatusBadge } from "@/components/ui";
 import { AdminProjectFilter, useAdminProjectFilter } from "@/components/AdminProjectFilter";
-import { useConfirm } from "@/lib/confirm";
-
-function priorityBadgeColor(priority: string) {
-  switch (priority) {
-    case "critical": return "bg-coral-red text-white";
-    case "high": return "bg-amber text-black";
-    case "low": return "bg-text-muted text-white";
-    default: return "bg-bg-panel-alt border-border-strong text-text-main border";
-  }
-}
+import { useAuth } from "@/lib/auth";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 export default function AdminTicketsPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const ticketIdParam = searchParams.get("ticketId");
   const [filter, setFilter] = useAdminProjectFilter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket | null>(null);
+  const [developers, setDevelopers] = useState<User[]>([]);
+  const [pickDeveloperId, setPickDeveloperId] = useState("");
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 6;
 
-  const [resolutionText, setResolutionText] = useState("");
-  const [hasFile, setHasFile] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const proofInputRef = useRef<HTMLInputElement>(null);
-  const confirm = useConfirm();
+  const ticketsVersion = useWsEvent("tickets");
 
   async function load() {
     const endpoint = filter.projectId
@@ -49,95 +41,48 @@ export default function AdminTicketsPage() {
   useEffect(() => {
     load();
     setSelected(null);
+    setPage(1);
   }, [filter.projectId]);
 
-  async function updatePriority(priority: string) {
-    if (!selected) return;
+  // A ws-triggered refetch shouldn't clear the currently selected ticket or reset
+  // pagination — load() already re-syncs `selected` from the fresh data itself.
+  useEffect(() => {
+    if (ticketsVersion > 0) load();
+  }, [ticketsVersion]);
+
+  useEffect(() => {
+    apiRequest<User[]>("/api/admin/developers").then(setDevelopers);
+  }, []);
+
+  // Developers manage tickets via their own drag-orderable queue, not this board.
+  useEffect(() => {
+    if (user?.role === "developer") router.replace("/admin");
+  }, [user, router]);
+
+  async function assignDeveloper() {
+    if (!selected || !pickDeveloperId) return;
     setError(null);
-    const form = new FormData();
-    form.append("priority", priority);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/tickets/${selected.id}/status`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${getAccessToken()}` },
-        body: form,
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new ApiError(res.status, data.detail);
-      }
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not update priority");
-    }
-  }
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      if (proofInputRef.current) {
-        proofInputRef.current.files = e.dataTransfer.files;
-        setHasFile(true);
-        setFileName(e.dataTransfer.files[0].name);
-      }
-    }
-  };
-
-  async function processTicket(status: TicketStatus) {
-    if (!selected) return;
-    if (status === "out_of_scope" && !resolutionText.trim()) {
-      setError("You must provide a description when declining a ticket (Out of Scope)");
-      return;
-    }
-    setError(null);
-    const form = new FormData();
-    form.append("status", status);
-    form.append("resolution_text", resolutionText);
-    const proofFile = proofInputRef.current?.files?.[0];
-    if (proofFile) form.append("proof_attachments", proofFile);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/tickets/${selected.id}/process`, {
+      await apiRequest(`/api/admin/tickets/${selected.id}/assignments`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${getAccessToken()}` },
-        body: form,
+        body: { developer_ids: [Number(pickDeveloperId)] },
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new ApiError(res.status, data.detail);
-      }
-      setResolutionText("");
-      if (proofInputRef.current) proofInputRef.current.value = "";
-      setHasFile(false);
-      setFileName(null);
+      setPickDeveloperId("");
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not process ticket");
+      setError(err instanceof ApiError ? String(err.detail) : "Could not assign developer");
     }
   }
 
-  async function eraseTicket() {
+  async function unassignDeveloper(developerId: number) {
     if (!selected) return;
-    const ok = await confirm({
-      message: "Permanently erase this ticket's full history? This cannot be undone.",
-      confirmLabel: "Delete",
-      danger: true,
-    });
-    if (!ok) return;
-    await apiRequest(`/api/admin/tickets/${selected.id}`, { method: "DELETE" });
-    setSelected(null);
-    await load();
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/tickets/${selected.id}/assignments/${developerId}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Could not unassign developer");
+    }
   }
 
   return (
@@ -155,33 +100,50 @@ export default function AdminTicketsPage() {
           {tickets.length === 0 ? (
             <EmptyState>No tickets in queue.</EmptyState>
           ) : (
-            tickets.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setSelected(t)}
-                className={`block w-full border-4 p-5 text-left transition-all ${
-                  selected?.id === t.id 
-                    ? "border-text-main bg-[var(--footer-strip)] text-white shadow-[4px_4px_0px_0px_var(--shadow-strong)]" 
-                    : "border-border-strong bg-bg-base hover:border-text-main"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-data-mono text-xs font-black tracking-widest">#{t.id} (Client {t.client_id})</span>
-                  <StatusBadge status={t.status} />
-                </div>
-                <h4 className={`font-bold mb-3 truncate ${selected?.id === t.id ? "text-white" : "text-text-main"}`}>
-                  {t.name}
-                </h4>
-                <div className="flex items-center gap-3">
-                  <span className={`font-data-mono text-[10px] uppercase tracking-widest px-2 py-0.5 ${selected?.id === t.id ? "bg-white/20 border-white/50 border" : priorityBadgeColor(t.priority)}`}>
-                    {t.priority}
+            <div className="flex flex-col h-full">
+              <div className="space-y-4 flex-1">
+                {tickets.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE).map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setSelected(t)}
+                    className={`block w-full border-4 p-5 text-left transition-all ${
+                      selected?.id === t.id
+                        ? "border-text-main bg-[var(--footer-strip)] text-white shadow-[4px_4px_0px_0px_var(--shadow-strong)]"
+                        : "border-border-strong bg-bg-base hover:border-text-main"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-data-mono text-xs font-black tracking-widest">#{t.id} (Client {t.client_id})</span>
+                      <StatusBadge status={t.status} />
+                    </div>
+                    <h4 className={`font-bold mb-3 truncate ${selected?.id === t.id ? "text-white" : "text-text-main"}`}>
+                      {t.name}
+                    </h4>
+                    <div className="flex items-center gap-3">
+                      <span className={`font-data-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border ${selected?.id === t.id ? "bg-white/20 border-white/50" : t.assignments?.length ? "bg-bg-panel-alt border-border-strong text-text-main" : "bg-coral-red text-white border-coral-red"}`}>
+                        {t.assignments?.length ? `${t.assignments.length} DEV` : "UNASSIGNED"}
+                      </span>
+                      <span className={`text-xs ${selected?.id === t.id ? "text-white/70" : "text-text-muted"}`}>
+                        {new Date(t.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {Math.ceil(tickets.length / ITEMS_PER_PAGE) > 1 && (
+                <div className="flex items-center justify-between mt-6 border-t-4 border-border-strong pt-4">
+                  <Button variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 border-2 border-transparent hover:border-border-strong">
+                    PREV
+                  </Button>
+                  <span className="font-data-mono text-sm font-bold uppercase tracking-widest text-text-main">
+                    PAGE {page} OF {Math.ceil(tickets.length / ITEMS_PER_PAGE)}
                   </span>
-                  <span className={`text-xs ${selected?.id === t.id ? "text-white/70" : "text-text-muted"}`}>
-                    {new Date(t.created_at).toLocaleString()}
-                  </span>
+                  <Button variant="ghost" onClick={() => setPage(p => Math.min(Math.ceil(tickets.length / ITEMS_PER_PAGE), p + 1))} disabled={page === Math.ceil(tickets.length / ITEMS_PER_PAGE)} className="px-4 py-2 border-2 border-transparent hover:border-border-strong">
+                    NEXT
+                  </Button>
                 </div>
-              </button>
-            ))
+              )}
+            </div>
           )}
         </div>
 
@@ -190,7 +152,7 @@ export default function AdminTicketsPage() {
           <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
             Ticket Analysis & Operations
           </h3>
-          
+
           {!selected ? (
             <div className="border-4 border-border-strong border-dashed p-12 text-center text-text-muted h-full flex items-center justify-center">
               <p className="font-data-mono uppercase tracking-widest">Select a ticket to begin processing</p>
@@ -198,7 +160,7 @@ export default function AdminTicketsPage() {
           ) : (
             <div className="space-y-6">
               {error && <Alert>{error}</Alert>}
-              
+
               <div className="border-4 border-border-strong bg-bg-base p-6 md:p-8 shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative overflow-hidden">
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 border-b-2 border-border-strong pb-6">
                   <div>
@@ -207,16 +169,6 @@ export default function AdminTicketsPage() {
                         INCIDENT #{selected.id}
                       </span>
                       <StatusBadge status={selected.status} />
-                      <Select 
-                        value={selected.priority} 
-                        onChange={(e) => updatePriority(e.target.value)}
-                        className={`font-data-mono text-[10px] uppercase tracking-widest ${priorityBadgeColor(selected.priority)}`}
-                      >
-                        <option value="low">Low Priority</option>
-                        <option value="medium">Medium Priority</option>
-                        <option value="high">High Priority</option>
-                        <option value="critical">Critical Priority</option>
-                      </Select>
                     </div>
                     <h2 className="font-headline-lg text-3xl font-black uppercase text-text-main leading-tight mb-4">
                       {selected.name}
@@ -225,82 +177,64 @@ export default function AdminTicketsPage() {
                   </div>
                 </div>
 
+                <div className="mb-8 border-b-2 border-border-strong pb-8">
+                  <h4 className="font-label-caps text-sm text-text-muted font-black uppercase tracking-widest mb-5">
+                    Assigned Developers
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-3 mb-5">
+                    {selected.assignments?.length ? (
+                      selected.assignments.map((a) => (
+                        <span key={a.id} className="inline-flex items-center gap-3 border-2 border-border-strong bg-bg-panel-alt px-4 py-2.5 font-data-mono text-sm text-text-main">
+                          {a.developer.full_name}
+                          <button
+                            onClick={() => unassignDeveloper(a.developer.id)}
+                            className="text-text-muted hover:text-coral-red transition-colors text-lg leading-none"
+                            title="Unassign"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="font-data-mono text-sm text-text-muted uppercase">No developers assigned</span>
+                    )}
+                  </div>
+                  <div className="flex gap-4">
+                    <Select value={pickDeveloperId} onChange={(e) => setPickDeveloperId(e.target.value)} className="max-w-sm">
+                      <option value="">Select developer…</option>
+                      {developers
+                        .filter((d) => !selected.assignments?.some((a) => a.developer.id === d.id))
+                        .map((d) => (
+                          <option key={d.id} value={d.id}>{d.full_name}</option>
+                        ))}
+                    </Select>
+                    <Button variant="secondary" onClick={assignDeveloper} disabled={!pickDeveloperId}>
+                      Assign
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="mb-8">
                   {selected.attachments.filter(a => !a.is_proof).map((a) => (
-                    <div key={a.id} className="mt-3">
-                      <p className="font-data-mono text-[10px] text-text-muted uppercase mb-2">Initial Upload Media</p>
-                      <a href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block cursor-zoom-in">
-                        <img src={fileUrl(a.file_path)} alt="Initial Media" className="border-2 border-border-strong w-full max-h-64 object-cover object-top hover:opacity-90 transition-opacity" />
+                    <div key={a.id} className="mt-4">
+                      <p className="font-data-mono text-[10px] text-text-muted uppercase mb-2 flex items-center gap-2 tracking-widest font-bold">
+                         <span className="material-symbols-outlined text-sm">image</span> Initial Upload Media
+                      </p>
+                      <a href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block group relative bg-bg-panel-alt border-4 border-border-strong p-2 hover:bg-border-subtle transition-colors shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 z-10">
+                          <span className="bg-bg-panel text-text-inverse font-data-mono font-bold px-4 py-2 uppercase tracking-widest border-2 border-text-inverse shadow-[4px_4px_0px_0px_#000]">
+                            Click to Enlarge
+                          </span>
+                        </div>
+                        <div className="bg-[var(--footer-strip)]/5">
+                          <img src={fileUrl(a.file_path)} alt="Initial Media" className="w-full h-64 object-contain" />
+                        </div>
                       </a>
                     </div>
                   ))}
                 </div>
-                
-                {selected.status === 'open' || selected.status === 'in_progress' ? (
-                  <div className="bg-bg-panel-alt border-2 border-border-strong p-6 mt-8 relative">
-                    <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2">
-                      <span className="bg-[var(--footer-strip)] text-white font-data-mono text-[10px] font-black uppercase tracking-widest px-3 py-1 shadow-[2px_2px_0px_0px_var(--shadow-strong)] border-2 border-border-strong">
-                        ADMIN ACTION
-                      </span>
-                    </div>
-                    <h4 className="font-label-caps text-xs text-text-muted font-black uppercase tracking-widest mb-4">
-                      Process Ticket Decision
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                      <Field>
-                        <Label>Reply / Decline Description (Required for decline)</Label>
-                        <Textarea value={resolutionText} onChange={(e) => setResolutionText(e.target.value)} rows={7} placeholder="Explain the resolution or why it is out of scope..." />
-                      </Field>
-                      
-                      <Field>
-                        <Label>Reply Media / Proof Image</Label>
-                        <div
-                          className={`relative flex flex-col items-center justify-center border-2 border-dashed p-6 text-center transition-colors h-full min-h-[150px] ${
-                            dragActive ? "border-brand-green bg-brand-green/5" : "border-border-strong bg-bg-base hover:border-text-main"
-                          }`}
-                          onDragEnter={handleDrag}
-                          onDragLeave={handleDrag}
-                          onDragOver={handleDrag}
-                          onDrop={handleDrop}
-                        >
-                          <span className={`material-symbols-outlined text-4xl mb-2 ${dragActive ? "text-brand-green" : "text-text-muted"}`} data-icon="upload_file">
-                            upload_file
-                          </span>
-                          <p className="font-data-mono text-text-main mb-1 font-bold text-sm">
-                            {fileName ? <span className="text-brand-green uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
-                          </p>
-                          <p className="font-data-mono text-[10px] text-text-muted uppercase tracking-widest mb-4">
-                            OR CLICK TO BROWSE
-                          </p>
-                          <input
-                            ref={proofInputRef}
-                            type="file"
-                            accept="image/*"
-                            className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
-                            onChange={(e) => {
-                              const files = e.target.files;
-                              if (files && files.length > 0) {
-                                setHasFile(true);
-                                setFileName(files[0].name);
-                              } else {
-                                setHasFile(false);
-                                setFileName(null);
-                              }
-                            }}
-                          />
-                        </div>
-                      </Field>
-                    </div>
-                    <div className="flex gap-4">
-                      <Button onClick={() => processTicket("resolved")} className="bg-forest-green text-white hover:bg-forest-green/80">
-                        Approve (Resolve Issue)
-                      </Button>
-                      <Button onClick={() => processTicket("out_of_scope")} variant="danger">
-                        Decline (Out of Scope)
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
+
+                {selected.status === 'resolved' || selected.status === 'out_of_scope' ? (
                    <div className="mt-8 border-t-2 border-border-strong pt-6">
                       <h4 className="font-label-caps text-xs text-text-muted font-black uppercase tracking-widest mb-4">
                         Resolution Provided
@@ -311,25 +245,28 @@ export default function AdminTicketsPage() {
                           {selected.resolution_text}
                       </div>
                        {selected.status === 'resolved' && selected.attachments.filter(a => a.is_proof).length > 0 && (
-                        <div className="mt-4">
-                          <p className="font-data-mono text-[10px] text-text-muted font-bold uppercase mb-2">Attached Proof</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="mt-6">
+                          <p className="font-data-mono text-[10px] text-text-muted font-bold uppercase mb-2 flex items-center gap-2 tracking-widest">
+                            <span className="material-symbols-outlined text-sm">verified</span> Attached Proof
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {selected.attachments.filter(a => a.is_proof).map((a) => (
-                              <a key={a.id} href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block cursor-zoom-in">
-                                <img src={fileUrl(a.file_path)} alt="Resolution Proof" className="border-2 border-border-strong w-full h-32 object-cover object-top hover:opacity-90 transition-opacity" />
+                              <a key={a.id} href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block group relative bg-bg-panel-alt border-4 border-border-strong p-2 hover:bg-border-subtle transition-colors shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 z-10">
+                                  <span className="bg-bg-panel text-text-inverse font-data-mono font-bold px-3 py-1 text-xs uppercase tracking-widest border-2 border-text-inverse shadow-[2px_2px_0px_0px_#000]">
+                                    Enlarge
+                                  </span>
+                                </div>
+                                <div className="bg-forest-green/5">
+                                  <img src={fileUrl(a.file_path)} alt="Resolution Proof" className="w-full h-40 object-contain" />
+                                </div>
                               </a>
                             ))}
                           </div>
                         </div>
                       )}
-                      
-                      <div className="mt-6 text-right">
-                        <Button variant="ghost" className="text-coral-red hover:bg-coral-red/10" onClick={eraseTicket}>
-                          Erase Ticket Permanently
-                        </Button>
-                      </div>
                    </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}

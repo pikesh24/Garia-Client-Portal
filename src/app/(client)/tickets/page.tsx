@@ -5,30 +5,37 @@ import { API_BASE_URL, apiRequest, ApiError, fileUrl, getAccessToken } from "@/l
 import { Ticket } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Label, PageHeader, StatusBadge, Textarea, Input } from "@/components/ui";
 import { useProject } from "@/lib/project-context";
-
-function priorityBadgeColor(priority: string) {
-  switch (priority) {
-    case "critical": return "bg-coral-red text-white";
-    case "high": return "bg-amber text-black";
-    case "low": return "bg-text-muted text-white";
-    default: return "bg-bg-panel-alt border-border-strong text-text-main border-2";
-  }
-}
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 export default function TicketsPage() {
   const { currentProject } = useProject();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
+  const ticketsVersion = useWsEvent("tickets");
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [hasFile, setHasFile] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Each pick/drop only ever hands us the files from that one interaction -- a native file
+  // input has no memory of what was chosen before, so we merge into what's already selected
+  // instead of replacing it. Dedupe by name+size so re-picking the same file isn't added twice.
+  function addFiles(newFiles: FileList | File[]) {
+    setSelectedFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      const additions = Array.from(newFiles).filter((f) => !existingKeys.has(`${f.name}:${f.size}`));
+      return [...prev, ...additions];
+    });
+  }
+
+  function removeFile(index: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function load() {
     if (!currentProject) {
@@ -46,7 +53,7 @@ export default function TicketsPage() {
 
   useEffect(() => {
     load();
-  }, [currentProject?.id]);
+  }, [currentProject?.id, ticketsVersion]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -63,11 +70,7 @@ export default function TicketsPage() {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      if (fileInputRef.current) {
-        fileInputRef.current.files = e.dataTransfer.files;
-        setHasFile(true);
-        setFileName(e.dataTransfer.files[0].name);
-      }
+      addFiles(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -75,15 +78,16 @@ export default function TicketsPage() {
     e.preventDefault();
     setError(null);
     if (!currentProject) return;
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) {
-      setError("An attachment is required to file an incident ticket");
+    if (selectedFiles.length === 0) {
+      setError("At least one attachment is required to file an incident ticket");
       return;
     }
     const form = new FormData();
     form.append("name", name);
     form.append("description", description);
-    form.append("file_upload", file);
+    for (const file of selectedFiles) {
+        form.append("file_upload", file);
+    }
     try {
       const res = await fetch(`${API_BASE_URL}/api/projects/${currentProject.id}/tickets`, {
         method: "POST",
@@ -97,8 +101,7 @@ export default function TicketsPage() {
       setName("");
       setDescription("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setHasFile(false);
-      setFileName(null);
+      setSelectedFiles([]);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not file ticket");
@@ -132,7 +135,7 @@ export default function TicketsPage() {
               <Field>
                 <Label>Media / Screenshot (Required)</Label>
                 <div
-                  className={`relative flex flex-col items-center justify-center border-4 border-dashed p-10 text-center transition-colors h-full min-h-[250px] ${
+                  className={`relative flex flex-col items-center justify-center border-4 border-dashed p-10 text-center transition-colors min-h-[250px] ${
                     dragActive ? "border-brand-green bg-brand-green/5" : "border-border-strong bg-bg-base hover:border-text-main"
                   }`}
                   onDragEnter={handleDrag}
@@ -144,34 +147,58 @@ export default function TicketsPage() {
                     upload_file
                   </span>
                   <p className="font-data-mono text-text-main mb-2 font-bold">
-                    {fileName ? <span className="text-brand-green uppercase">{fileName}</span> : "DRAG & DROP IMAGE HERE"}
+                    {selectedFiles.length > 0 ? (
+                      <span className="text-brand-green uppercase">
+                        {selectedFiles.length === 1 ? "1 FILE SELECTED" : `${selectedFiles.length} FILES SELECTED`}
+                      </span>
+                    ) : (
+                      "DRAG & DROP IMAGES HERE"
+                    )}
                   </p>
                   <p className="font-data-mono text-xs text-text-muted uppercase tracking-widest mb-6">
-                    OR CLICK TO BROWSE
+                    OR CLICK TO BROWSE (ADDS TO YOUR SELECTION)
                   </p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    required
+                    multiple
                     accept="image/*"
                     className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
                     onChange={(e) => {
-                      const files = e.target.files;
-                      if (files && files.length > 0) {
-                        setHasFile(true);
-                        setFileName(files[0].name);
-                      } else {
-                        setHasFile(false);
-                        setFileName(null);
+                      // Snapshot into a plain array before touching e.target.value -- e.target.files
+                      // is a *live* FileList tied to the input, and clearing the input's value below
+                      // empties that same live list, which would race against React's state update.
+                      if (e.target.files && e.target.files.length > 0) {
+                        addFiles(Array.from(e.target.files));
                       }
+                      // Reset so picking the exact same file(s) again still fires onChange next time.
+                      e.target.value = "";
                     }}
                   />
                 </div>
+                {selectedFiles.length > 0 && (
+                  <ul className="mt-3 space-y-1 max-h-32 overflow-y-auto">
+                    {selectedFiles.map((file, i) => (
+                      <li key={`${file.name}-${file.size}-${i}`} className="flex items-center gap-2 font-data-mono text-xs text-text-main bg-bg-base border-2 border-border-strong/50 px-3 py-2">
+                        <span className="material-symbols-outlined text-sm text-brand-green shrink-0">image</span>
+                        <span className="truncate flex-1">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="material-symbols-outlined text-sm text-text-muted hover:text-coral-red transition-colors shrink-0"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          close
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Field>
             </div>
             
             <div className="flex justify-end pt-6 border-t-4 border-border-strong border-dashed mt-6">
-              <Button type="submit" disabled={!hasFile || !name.trim() || !description.trim()}>
+              <Button type="submit" disabled={selectedFiles.length === 0 || !name.trim() || !description.trim()}>
                 Submit Incident Report
               </Button>
             </div>
@@ -210,9 +237,6 @@ export default function TicketsPage() {
                     {t.name}
                   </h4>
                   <div className="flex items-center gap-3">
-                    <span className={`font-data-mono text-[10px] uppercase tracking-widest px-2 py-0.5 ${selected?.id === t.id ? "bg-white/20 border-white/50 border" : priorityBadgeColor(t.priority)}`}>
-                      {t.priority}
-                    </span>
                     <span className={`text-xs ${selected?.id === t.id ? "text-white/70" : "text-text-muted"}`}>
                       {new Date(t.created_at).toLocaleString()}
                     </span>
@@ -237,9 +261,6 @@ export default function TicketsPage() {
                         INCIDENT #{selected.id}
                       </span>
                       <StatusBadge status={selected.status} />
-                      <span className={`font-data-mono text-[10px] uppercase tracking-widest px-2 py-1 ${priorityBadgeColor(selected.priority)}`}>
-                        {selected.priority} priority
-                      </span>
                     </div>
                     <h2 className="font-headline-lg text-3xl font-black uppercase text-text-main leading-tight mb-4">
                       {selected.name}
@@ -254,9 +275,9 @@ export default function TicketsPage() {
                 
                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-1 before:bg-border-strong">
                   
-                  {/* Creation Event */}
-                  <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong bg-[var(--footer-strip)] text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10">
+                  {/* Creation Event -- raised by the client, always pinned to the left */}
+                  <div className="relative flex items-center justify-between md:justify-normal group is-active">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong bg-[var(--footer-strip)] text-white shrink-0 md:order-1 md:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10">
                       <span className="material-symbols-outlined text-xl font-bold">add</span>
                     </div>
                     <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] border-2 border-border-strong bg-bg-panel-alt p-4 shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
@@ -267,20 +288,31 @@ export default function TicketsPage() {
                         </span>
                       </div>
                       
-                      {selected.attachments.filter(a => !a.is_proof).map((a) => (
-                        <div key={a.id} className="mt-3">
-                          <a href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block cursor-zoom-in">
-                            <img src={fileUrl(a.file_path)} alt="Initial Media" className="border-2 border-border-strong w-full max-h-48 object-cover object-top hover:opacity-90 transition-opacity" />
-                          </a>
+                      {selected.attachments.filter(a => !a.is_proof).length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-4">
+                          {selected.attachments.filter(a => !a.is_proof).map((a) => (
+                            <div key={a.id} className="relative group max-w-sm w-full sm:w-auto">
+                              <a href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block relative bg-bg-panel-alt border-2 border-border-strong p-1.5 hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 z-10">
+                                  <span className="bg-bg-panel text-text-main font-data-mono font-bold px-3 py-1 text-xs uppercase tracking-widest border-2 border-text-main shadow-[2px_2px_0px_0px_#000]">
+                                    Enlarge
+                                  </span>
+                                </div>
+                                <div className="bg-border-subtle/20 overflow-hidden flex items-center justify-center h-32 w-full sm:w-48">
+                                  <img src={fileUrl(a.file_path)} alt="Initial Media" className="max-w-full max-h-full object-contain" />
+                                </div>
+                              </a>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
 
-                  {/* History Events */}
+                  {/* History Events -- always on the opposite side from the client's creation event, never alternating */}
                   {selected.status_history.map((h) => (
-                    <div key={h.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                      <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10 ${
+                    <div key={h.id} className="relative flex items-center justify-between md:justify-normal md:flex-row-reverse group is-active">
+                      <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-border-strong shrink-0 md:order-1 md:-translate-x-1/2 shadow-[2px_2px_0px_0px_var(--shadow-strong)] relative z-10 ${
                         h.status === 'resolved' ? 'bg-forest-green text-white' : 
                         h.status === 'out_of_scope' ? 'bg-coral-red text-white' : 'bg-amber text-black'
                       }`}>
@@ -303,16 +335,24 @@ export default function TicketsPage() {
                           </div>
                         )}
                         
-                        {/* Show resolution images if this is the resolved event */}
                         {h.status === 'resolved' && selected.attachments.filter(a => a.is_proof).length > 0 && (
                           <div className="mt-4">
                             <p className="font-data-mono text-[10px] text-text-muted font-bold uppercase mb-2">Attached Proof</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="flex flex-wrap gap-4">
                               {selected.attachments.filter(a => a.is_proof).map((a) => (
-                              <a key={a.id} href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block cursor-zoom-in">
-                                <img src={fileUrl(a.file_path)} alt="Resolution Proof" className="border-2 border-border-strong w-full h-32 object-cover object-top hover:opacity-90 transition-opacity" />
-                              </a>
-                            ))}
+                                <div key={a.id} className="relative group max-w-sm w-full sm:w-auto">
+                                  <a href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="block relative bg-bg-panel-alt border-2 border-border-strong p-1.5 hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all shadow-[4px_4px_0px_0px_var(--shadow-strong)]">
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 z-10">
+                                      <span className="bg-bg-panel text-text-main font-data-mono font-bold px-3 py-1 text-xs uppercase tracking-widest border-2 border-text-main shadow-[2px_2px_0px_0px_#000]">
+                                        Enlarge
+                                      </span>
+                                    </div>
+                                    <div className="bg-forest-green/10 border border-border-subtle border-dashed overflow-hidden flex items-center justify-center h-32 w-full sm:w-48">
+                                      <img src={fileUrl(a.file_path)} alt="Resolution Proof" className="max-w-full max-h-full object-contain" />
+                                    </div>
+                                  </a>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}

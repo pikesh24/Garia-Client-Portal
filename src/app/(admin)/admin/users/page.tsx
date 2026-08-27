@@ -5,10 +5,14 @@ import Link from "next/link";
 import { apiRequest, ApiError } from "@/lib/api";
 import { User } from "@/lib/types";
 import { Alert, Button, EmptyState, Field, Input, Label, PageHeader } from "@/components/ui";
-import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
+import { useAuth } from "@/lib/auth";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 export default function AdminUsersPage() {
+  const { user } = useAuth();
+  const canManage = user?.role !== "developer";
   const [clients, setClients] = useState<User[]>([]);
+  const usersVersion = useWsEvent("users");
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -18,11 +22,6 @@ export default function AdminUsersPage() {
     password: "",
     full_name: "",
     can_book_offline_meeting: false,
-    hourly_rate_frontend: "",
-    hourly_rate_backend: "",
-    hourly_rate_production: "",
-    maintenance_price: "",
-    project_start_date: "",
   });
 
   async function load() {
@@ -32,7 +31,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [usersVersion]);
 
   const filteredClients = useMemo(() => {
     if (!search) return clients;
@@ -53,11 +52,6 @@ export default function AdminUsersPage() {
           password: form.password,
           full_name: form.full_name,
           can_book_offline_meeting: form.can_book_offline_meeting,
-          hourly_rate_frontend: form.hourly_rate_frontend ? Number(form.hourly_rate_frontend) : null,
-          hourly_rate_backend: form.hourly_rate_backend ? Number(form.hourly_rate_backend) : null,
-          hourly_rate_production: form.hourly_rate_production ? Number(form.hourly_rate_production) : null,
-          maintenance_price: form.maintenance_price ? Number(form.maintenance_price) : null,
-          project_start_date: form.project_start_date || null,
         },
       });
       setShowForm(false);
@@ -72,10 +66,10 @@ export default function AdminUsersPage() {
     <div className="space-y-12">
       <PageHeader
         title="Client Accounts Configuration Matrix"
-        action={<Button onClick={() => setShowForm((v) => !v)}>{showForm ? "Cancel" : "New Client"}</Button>}
+        action={canManage ? <Button onClick={() => setShowForm((v) => !v)}>{showForm ? "Cancel" : "New Client"}</Button> : undefined}
       />
 
-      {showForm && (
+      {canManage && showForm && (
         <div className="border-4 border-border-strong bg-bg-panel-alt shadow-[8px_8px_0px_0px_var(--shadow-strong)] p-6 md:p-8">
           <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
             Create Client Account
@@ -110,45 +104,6 @@ export default function AdminUsersPage() {
                 required
                 value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <Label>Hourly Rate (Frontend)</Label>
-              <Input
-                type="number"
-                value={form.hourly_rate_frontend}
-                onChange={(e) => setForm({ ...form, hourly_rate_frontend: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <Label>Hourly Rate (Backend)</Label>
-              <Input
-                type="number"
-                value={form.hourly_rate_backend}
-                onChange={(e) => setForm({ ...form, hourly_rate_backend: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <Label>Hourly Rate (Production)</Label>
-              <Input
-                type="number"
-                value={form.hourly_rate_production}
-                onChange={(e) => setForm({ ...form, hourly_rate_production: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <Label>Annual Maintenance Price</Label>
-              <Input
-                type="number"
-                value={form.maintenance_price}
-                onChange={(e) => setForm({ ...form, maintenance_price: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <Label>Project Start Date</Label>
-              <BrutalistDatePicker
-                value={form.project_start_date}
-                onChange={(val) => setForm({ ...form, project_start_date: val })}
               />
             </Field>
             <Field className="flex items-center gap-3 md:col-span-1 pt-8">

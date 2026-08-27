@@ -3,7 +3,7 @@
 import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 export function Card({ children, className = "", variant = "default" }: { children: ReactNode; className?: string; variant?: "default" | "alert" | "spotlight" | "table" }) {
-  const base = "p-card-padding relative overflow-hidden shadow-[8px_8px_0px_0px_var(--shadow-strong)] border-4 border-border-strong";
+  const base = "p-card-padding relative shadow-[8px_8px_0px_0px_var(--shadow-strong)] border-4 border-border-strong";
   const variants = {
     default: "bg-bg-base",
     alert: "bg-coral-red border-border-strong",
@@ -41,9 +41,9 @@ export function Button({
   const base = "font-label-caps text-label-caps tracking-[0.1em] font-bold px-8 py-4 uppercase border-2 transition-all shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none active:translate-y-1 active:translate-x-1 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants: Record<ButtonVariant, string> = {
-    primary: "bg-brand-green text-on-brand-green border-border-strong",
-    secondary: "bg-bg-panel text-text-inverse border-border-strong shadow-[4px_4px_0px_0px_var(--brand-green)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--brand-green)]",
-    danger: "bg-bg-base text-coral-red border-coral-red",
+    primary: "bg-brand-green text-on-brand-green border-border-strong shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--shadow-strong)]",
+    secondary: "bg-bg-base text-text-main border-border-strong shadow-[4px_4px_0px_0px_var(--shadow-strong)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--shadow-strong)] hover:bg-border-strong hover:text-bg-base",
+    danger: "bg-bg-base text-coral-red border-coral-red shadow-[4px_4px_0px_0px_var(--coral-red)] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_var(--coral-red)] hover:bg-coral-red hover:text-white",
     ghost: "border-transparent bg-transparent text-text-muted shadow-none hover:text-text-main hover:bg-border-subtle active:translate-y-0 active:translate-x-0 hover:translate-y-0 hover:translate-x-0 font-data-mono normal-case tracking-widest",
   };
 
@@ -58,7 +58,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${props.className ?? ""}`}
+      className={`w-full h-[48px] border-2 border-border-strong bg-bg-panel-alt px-4 font-data-mono text-data-mono text-text-main placeholder:text-text-muted transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${props.className ?? ""}`}
     />
   );
 }
@@ -76,7 +76,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full border-2 border-border-strong bg-bg-panel-alt px-4 py-3 font-data-mono text-data-mono text-text-main transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] ${props.className ?? ""}`}
+      className={`w-full h-[48px] border-2 border-border-strong bg-bg-panel-alt px-4 font-data-mono text-data-mono text-text-main transition-all focus:border-text-main focus:outline-none focus:shadow-[4px_4px_0px_0px_var(--border-strong)] ${props.className ?? ""}`}
     />
   );
 }
@@ -85,8 +85,8 @@ export function Label({ children, className = "" }: { children: ReactNode; class
   return <label className={`mb-2 block font-label-caps text-label-caps tracking-[0.1em] uppercase text-text-muted ${className}`}>{children}</label>;
 }
 
-export function Field({ children }: { children: ReactNode }) {
-  return <div className="mb-6">{children}</div>;
+export function Field({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`mb-6 ${className}`}>{children}</div>;
 }
 
 export function Toggle({
@@ -120,10 +120,10 @@ export function Toggle({
 }
 
 const badgeColors: Record<string, string> = {
-  positive: "bg-positive border-positive text-text-inverse",
-  warning: "bg-warning border-warning text-text-inverse",
-  neutral: "bg-text-muted border-text-muted text-text-inverse",
-  danger: "bg-coral-red border-coral-red text-text-inverse",
+  positive: "bg-[#059669] border-border-strong text-white shadow-[3px_3px_0px_0px_var(--shadow-strong)]",
+  warning: "bg-[#D97706] border-border-strong text-white shadow-[3px_3px_0px_0px_var(--shadow-strong)]",
+  neutral: "bg-bg-panel border-border-strong text-text-inverse shadow-[3px_3px_0px_0px_var(--shadow-strong)]",
+  danger: "bg-coral-red border-border-strong text-white shadow-[3px_3px_0px_0px_var(--shadow-strong)]",
 };
 
 const statusBadgeMap: Record<string, keyof typeof badgeColors> = {
@@ -154,7 +154,7 @@ export function StatusBadge({ status }: { status: string }) {
   const bucket = statusBadgeMap[status] ?? "neutral";
   return (
     <span
-      className={`inline-block border px-2 py-1 font-data-mono text-[10px] uppercase tracking-wider ${badgeColors[bucket]}`}
+      className={`inline-block border-2 px-3 py-1 font-label-caps text-[10px] font-black uppercase tracking-widest transition-transform hover:-translate-y-0.5 ${badgeColors[bucket]}`}
     >
       {status.replace(/_/g, " ")}
     </span>

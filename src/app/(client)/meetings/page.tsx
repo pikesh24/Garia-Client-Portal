@@ -2,23 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
-import { BusyRange, Meeting, MeetingBlock, MeetingType } from "@/lib/types";
+import { BlockedDate, BusyRange, Meeting, MeetingBlock, MeetingType } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useProject } from "@/lib/project-context";
 import { EmptyState, PageHeader } from "@/components/ui";
-import { MeetingCalendarView, MeetingActions, BookableConfig, TimeRange } from "@/components/MeetingCalendar";
+import { MeetingCalendarView, MeetingActions, BookableConfig, TimeRange, toDateKey } from "@/components/MeetingCalendar";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 const MIN_HOURS_AHEAD = 36;
 
 function minBookableInstant(): Date {
   return new Date(Date.now() + MIN_HOURS_AHEAD * 60 * 60 * 1000);
-}
-
-function toLocalDateParam(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 export default function MeetingsPage() {
@@ -27,6 +21,7 @@ export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
   const [loading, setLoading] = useState(true);
+  const meetingsVersion = useWsEvent("meetings");
 
   const minInstant = useMemo(() => minBookableInstant(), []);
 
@@ -49,33 +44,44 @@ export default function MeetingsPage() {
   useEffect(() => {
     load();
     loadBlocks();
-  }, [currentProject?.id]);
+  }, [currentProject?.id, meetingsVersion]);
 
   const fetchBusyRanges = async (date: Date, excludeMeetingId?: number): Promise<TimeRange[]> => {
-    const params = new URLSearchParams({ date: toLocalDateParam(date) });
+    if (!currentProject) return [];
+    const params = new URLSearchParams({ date: toDateKey(date) });
     if (excludeMeetingId) params.set("exclude_meeting_id", String(excludeMeetingId));
-    const data = await apiRequest<BusyRange[]>(`/api/meetings/busy?${params.toString()}`);
+    const data = await apiRequest<BusyRange[]>(`/api/projects/${currentProject.id}/meetings/busy?${params.toString()}`);
     return data.map((r) => ({ start: new Date(r.start_datetime), end: new Date(r.end_datetime) }));
+  };
+
+  const fetchBlockedDates = async (rangeStart: Date, rangeEnd: Date): Promise<BlockedDate[]> => {
+    if (!currentProject) return [];
+    const params = new URLSearchParams({ range_start: toDateKey(rangeStart), range_end: toDateKey(rangeEnd) });
+    return apiRequest<BlockedDate[]>(`/api/projects/${currentProject.id}/meetings/blocked-dates?${params.toString()}`);
   };
 
   const actions: MeetingActions = {
     onCancel: async (m) => {
-      await apiRequest(`/api/meetings/${m.id}/cancel`, { method: "POST" });
+      if (!currentProject) return;
+      await apiRequest(`/api/projects/${currentProject.id}/meetings/${m.id}/cancel`, { method: "POST" });
       await load();
     },
     onProposeReschedule: async (m, start, end) => {
-      await apiRequest(`/api/meetings/${m.id}/propose-reschedule`, {
+      if (!currentProject) return;
+      await apiRequest(`/api/projects/${currentProject.id}/meetings/${m.id}/propose-reschedule`, {
         method: "POST",
         body: { pending_start_datetime: start.toISOString(), pending_end_datetime: end.toISOString() },
       });
       await load();
     },
     onAcceptReschedule: async (m) => {
-      await apiRequest(`/api/meetings/${m.id}/accept-reschedule`, { method: "POST" });
+      if (!currentProject) return;
+      await apiRequest(`/api/projects/${currentProject.id}/meetings/${m.id}/accept-reschedule`, { method: "POST" });
       await load();
     },
     onDenyReschedule: async (m, reason) => {
-      await apiRequest(`/api/meetings/${m.id}/deny-reschedule`, { method: "POST", body: { reason } });
+      if (!currentProject) return;
+      await apiRequest(`/api/projects/${currentProject.id}/meetings/${m.id}/deny-reschedule`, { method: "POST", body: { reason } });
       await load();
     },
   };
@@ -115,6 +121,7 @@ export default function MeetingsPage() {
           labelFor={(m) => m.status.replace(/_/g, " ")}
           bookable={bookable}
           fetchBusyRanges={fetchBusyRanges}
+          fetchBlockedDates={fetchBlockedDates}
           blocks={blocks}
         />
       )}

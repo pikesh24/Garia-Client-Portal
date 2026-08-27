@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
-import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, User } from "@/lib/types";
+import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, Project, User } from "@/lib/types";
 import {
   Alert,
   Button,
@@ -20,6 +21,9 @@ import {
 } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
 import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
+import { markFeatureRequestRead, useUnreadFeatureRequestIds } from "@/lib/unreadFeatureMessages";
 
 function formatINR(amount: number | null): string {
   if (amount == null) return "—";
@@ -40,15 +44,25 @@ const emptyDraft = {
 const emptyServiceDraft = { name: "", description: "", recurring_cost: "" };
 type ServiceDraft = typeof emptyServiceDraft;
 
-function computeLivePrice(client: User, d: typeof emptyDraft): number {
+function computeLivePrice(project: Project, d: typeof emptyDraft): number {
   return (
-    Number(d.quoted_frontend_hours || 0) * (client.hourly_rate_frontend ?? 0) +
-    Number(d.quoted_backend_hours || 0) * (client.hourly_rate_backend ?? 0) +
-    Number(d.quoted_production_hours || 0) * (client.hourly_rate_production ?? 0)
+    Number(d.quoted_frontend_hours || 0) * (project.hourly_rate_frontend ?? 0) +
+    Number(d.quoted_backend_hours || 0) * (project.hourly_rate_backend ?? 0) +
+    Number(d.quoted_production_hours || 0) * (project.hourly_rate_production ?? 0)
   );
 }
 
-export function BaseProjectSection({ projectId, client }: { projectId: string; client: User }) {
+export function BaseProjectSection({
+  projectId,
+  client,
+  project,
+}: {
+  projectId: string;
+  client: User;
+  project: Project;
+}) {
+  const searchParams = useSearchParams();
+  const focusFeatureId = searchParams.get("featureId");
   const [features, setFeatures] = useState<FeatureRequest[] | null>(null);
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +76,9 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
   const [editServiceDraft, setEditServiceDraft] = useState<ServiceDraft | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [confirmingCompletionFor, setConfirmingCompletionFor] = useState<FeatureRequest | null>(null);
+  const featureRequestsVersion = useWsEvent("feature_requests");
+  const maintenanceVersion = useWsEvent("maintenance");
+  const unreadIds = useUnreadFeatureRequestIds();
 
   async function load() {
     const [featureData, serviceData] = await Promise.all([
@@ -74,7 +91,19 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
 
   useEffect(() => {
     load();
-  }, [projectId]);
+  }, [projectId, featureRequestsVersion, maintenanceVersion]);
+
+  const autoOpenedFeatureId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!focusFeatureId || !features) return;
+    if (autoOpenedFeatureId.current === focusFeatureId) return;
+    const match = features.find((f) => f.id === Number(focusFeatureId));
+    if (match && match.challenge_status !== "none") {
+      autoOpenedFeatureId.current = focusFeatureId;
+      setReviewingChallenge(match);
+    }
+  }, [focusFeatureId, features]);
 
   function toPayload(d: typeof emptyDraft) {
     return {
@@ -218,6 +247,12 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
   async function confirmHoursMatch(fr: FeatureRequest) {
     const totalQuotedHours =
       (fr.quoted_frontend_hours ?? 0) + (fr.quoted_backend_hours ?? 0) + (fr.quoted_production_hours ?? 0);
+    if (totalQuotedHours <= 0) {
+      setError("Enter the hours spent on this feature before marking it completed.");
+      setConfirmingCompletionFor(null);
+      startEdit(fr);
+      return;
+    }
     setError(null);
     try {
       await apiRequest(`/api/admin/feature-requests/${fr.id}/complete`, {
@@ -446,7 +481,7 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
               <div>
                 <Label>Calculated Live Price (INR)</Label>
                 <div className="font-display-xl text-3xl font-black text-brand-green flex items-center gap-2">
-                  {formatINR(computeLivePrice(client, draft))}
+                  {formatINR(computeLivePrice(project, draft))}
                 </div>
               </div>
               <Button type="submit" className="w-full md:w-auto px-12 py-6">Add Feature to Project</Button>
@@ -509,8 +544,24 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                 {confirmingCompletionFor.quoted_production_hours ?? "—"}
               </div>
             </div>
+            {(confirmingCompletionFor.quoted_frontend_hours ?? 0) +
+              (confirmingCompletionFor.quoted_backend_hours ?? 0) +
+              (confirmingCompletionFor.quoted_production_hours ?? 0) <=
+              0 && (
+              <Alert>No hours have been entered for this feature yet. Add hours before marking it completed.</Alert>
+            )}
             <div className="flex gap-4 pt-2">
-              <Button onClick={() => confirmHoursMatch(confirmingCompletionFor)}>Yes, Matches</Button>
+              <Button
+                disabled={
+                  (confirmingCompletionFor.quoted_frontend_hours ?? 0) +
+                    (confirmingCompletionFor.quoted_backend_hours ?? 0) +
+                    (confirmingCompletionFor.quoted_production_hours ?? 0) <=
+                  0
+                }
+                onClick={() => confirmHoursMatch(confirmingCompletionFor)}
+              >
+                Yes, Matches
+              </Button>
               <Button variant="secondary" onClick={() => hoursDontMatch(confirmingCompletionFor)}>
                 No, Edit Hours
               </Button>
@@ -528,6 +579,12 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
 
     return (
       <div key={fr.id} className="border-4 border-border-strong bg-bg-base p-card-padding shadow-[8px_8px_0px_0px_var(--shadow-strong)] relative group transition-all">
+        {unreadIds.includes(fr.id) && (
+          <span
+            className="absolute top-4 right-4 h-3 w-3 rounded-full bg-brand-green animate-pulse z-10"
+            title="New message"
+          />
+        )}
         {editing && editDraft ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -785,15 +842,15 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
               <div className="shrink-0 flex gap-3">
                 {fr.is_base_feature && fr.challenge_status !== "none" && (
                   <Button variant="secondary" onClick={() => setReviewingChallenge(fr)}>
-                    Review Challenge
+                    {fr.challenge_status === "open" ? "Review Challenge" : "View Challenge"}
                   </Button>
                 )}
-                {fr.status === "under_review" && (
+                {fr.status === "under_review" && !fr.is_base_feature && (
                   <Button variant="secondary" onClick={() => approveFeature(fr)}>
                     Approve
                   </Button>
                 )}
-                {fr.status === "approved" && (
+                {fr.status === "approved" && (!fr.is_base_feature || fr.base_feature_activated) && (
                   <Button variant="secondary" onClick={() => markInProgress(fr)}>
                     Mark In Progress
                   </Button>
@@ -820,11 +877,11 @@ export function BaseProjectSection({ projectId, client }: { projectId: string; c
                 <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">
                   Calculated Price
                 </div>
-                <div className="font-data-mono text-sm text-brand-green font-bold">{formatINR(fr.price)}</div>
+                <div className="font-data-mono text-xl text-brand-green font-black">{formatINR(fr.price)}</div>
               </div>
               <div>
                 <div className="font-label-caps text-[10px] text-text-muted tracking-widest uppercase mb-1">Agreement Date</div>
-                <div className="font-data-mono text-sm text-text-main font-bold">{fr.agreement_date ?? "—"}</div>
+                <div className="font-data-mono text-sm text-text-main font-bold">{formatDate(fr.agreement_date)}</div>
               </div>
             </div>
 
@@ -882,6 +939,7 @@ function ChallengeReviewModal({
 
   useEffect(() => {
     loadMessages();
+    markFeatureRequestRead(featureRequest.id);
   }, [featureRequest.id]);
 
   async function sendMessage() {

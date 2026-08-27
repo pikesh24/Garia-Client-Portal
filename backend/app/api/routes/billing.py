@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/billing/invoices", tags=["billing"], dependencie
 def list_my_invoices(current_user: User = Depends(require_client), db: Session = Depends(get_db)):
     return (
         db.query(Invoice)
-        .filter(Invoice.client_id == current_user.id)
+        .filter(Invoice.client_id == current_user.id, Invoice.status != InvoiceStatus.DRAFT)
         .order_by(Invoice.created_at.desc())
         .all()
     )

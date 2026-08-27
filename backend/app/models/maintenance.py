@@ -8,8 +8,8 @@ from app.models.enums import MaintenanceStatus
 
 
 class MaintenanceRecord(Base, TimestampMixin):
-    """One row per client per annual maintenance cycle. `amount` defaults to a snapshot
-    of the client's maintenance_price at creation time, but the admin may override it
+    """One row per project per annual maintenance cycle. `amount` defaults to a snapshot
+    of the project's maintenance_price at creation time, but the admin may override it
     (e.g. to roll in infrastructure overhead costs) -- either way it's a fixed snapshot
     that won't change if maintenance_price or infra costs change later."""
 

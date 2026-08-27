@@ -3,51 +3,53 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, ApiError, fileUrl } from "@/lib/api";
-import { FeatureRequest, InfrastructureCostEntry, MaintenanceRecord, User } from "@/lib/types";
+import { FeatureRequest, InfrastructureCostEntry, MaintenanceRecord, Project, User } from "@/lib/types";
 import { Alert, StatusBadge } from "@/components/ui";
 import { useConfirm } from "@/lib/confirm";
 import { BrutalistSelect } from "@/components/BrutalistSelect";
 import { AdminProjectFilter, ProjectFilterValue, useAdminProjectFilter } from "@/components/AdminProjectFilter";
 import { BrutalistDatePicker } from "@/components/BrutalistDatePicker";
+import { formatDate } from "@/lib/date";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
 type Tab = "costs" | "compliance";
 
 export default function AdminMaintenancePage() {
-  const [tab, setTab] = useState<Tab>("costs");
+  const [tab, setTab] = useState<Tab>("compliance");
   const [filter, setFilter] = useAdminProjectFilter();
   return (
     <div className="space-y-12">
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 mb-8 border-b-4 border-border-strong pb-8">
         <div>
           <h1 className="font-display-xl text-5xl font-black uppercase text-text-main leading-none tracking-tight">
-            Infrastructure & Maintenance Control
+            Maintenance & Fees
           </h1>
           <p className="font-data-mono text-sm uppercase tracking-widest text-text-muted mt-4">
-            System Overhead Allocation & Annual Compliance Verification
+            Manage what clients pay for maintenance and review their payment proofs
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-4 border-b-4 border-border-strong pb-6">
         <button
-          onClick={() => setTab("costs")}
-          className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
-            ${tab === "costs" 
-              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
-              : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
-            }`}
-        >
-          Infrastructure Overhead Register
-        </button>
-        <button
           onClick={() => setTab("compliance")}
           className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
-            ${tab === "compliance" 
-              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]" 
+            ${tab === "compliance"
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]"
               : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
             }`}
         >
-          Annual Maintenance Compliance Center
+          Payments
+        </button>
+        <button
+          onClick={() => setTab("costs")}
+          className={`border-4 border-border-strong px-8 py-4 font-bold uppercase transition-all flex-1 md:flex-none text-center
+            ${tab === "costs"
+              ? "bg-[var(--footer-strip)] text-white shadow-[6px_6px_0px_0px_var(--shadow-strong)] translate-x-[-2px] translate-y-[-2px]"
+              : "bg-bg-panel-alt text-text-main hover:bg-border-strong/10"
+            }`}
+        >
+          Cost Breakdown
         </button>
       </div>
 
@@ -65,14 +67,9 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
   const [features, setFeatures] = useState<FeatureRequest[]>([]);
   const [costs, setCosts] = useState<InfrastructureCostEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const maintenanceVersion = useWsEvent("maintenance");
+  const featureRequestsVersion = useWsEvent("feature_requests");
 
-  const [clientId, setClientId] = useState("");
-  const [featureId, setFeatureId] = useState("");
-  const [module, setModule] = useState("");
-  const [billingType, setBillingType] = useState("");
-  const [overhead, setOverhead] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const confirm = useConfirm();
 
   async function loadAll() {
@@ -92,60 +89,11 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
 
   useEffect(() => {
     loadAll();
-  }, [filter.projectId]);
-
-  useEffect(() => {
-    if (filter.clientId) setClientId(filter.clientId);
-  }, [filter.clientId]);
-
-  async function deployCost(e: React.FormEvent) {
-    e.preventDefault();
-    if (!clientId || !module || !billingType || !overhead) {
-      setError("Please fill all required fields");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (filter.projectId) {
-        await apiRequest(`/api/admin/projects/${filter.projectId}/maintenance/infrastructure-costs`, {
-          method: "POST",
-          body: {
-            feature_request_id: featureId ? Number(featureId) : null,
-            module,
-            billing_type: billingType,
-            monthly_overhead_price: Number(overhead),
-            description: null
-          }
-        });
-      } else {
-        await apiRequest("/api/admin/maintenance/infrastructure-costs", {
-          method: "POST",
-          body: {
-            client_id: Number(clientId),
-            feature_request_id: featureId ? Number(featureId) : null,
-            module,
-            billing_type: billingType,
-            monthly_overhead_price: Number(overhead),
-            description: null
-          }
-        });
-      }
-      setModule("");
-      setBillingType("");
-      setOverhead("");
-      setFeatureId("");
-      await loadAll();
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not add overhead cost");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  }, [filter.projectId, maintenanceVersion, featureRequestsVersion]);
 
   async function removeCost(id: number) {
     const ok = await confirm({
-      message: "Permanently erase this infrastructure overhead allocation?",
+      message: "Delete this cost item? This can't be undone.",
       confirmLabel: "Delete",
       danger: true,
     });
@@ -158,126 +106,19 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
     }
   }
 
-  const clientOptions = clients.map(c => ({ value: String(c.id), label: `${c.full_name} (${c.email})` }));
-  const featureOptions = [{ value: "", label: "-- NO SPECIFIC FEATURE --" }, ...features.filter(f => f.client_id === Number(clientId)).map(f => ({ value: String(f.id), label: f.name }))];
-
   return (
     <div className="space-y-12">
-      {/* Creation Form */}
-      <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative">
-        <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-text-main mb-8 border-b-4 border-border-strong pb-4">
-          SYSTEM TERMINAL: ALLOCATE NEW OVERHEAD COST
-        </h3>
-
-        <form onSubmit={deployCost} className="space-y-8">
-          {error && <Alert kind="error">{error}</Alert>}
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-50">
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
-              <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Target Environment Mapping
-              </label>
-              {filter.clientId ? (
-                <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
-                  {clients.find((c) => String(c.id) === filter.clientId)?.full_name ?? `#${filter.clientId}`}
-                  <span className="ml-2 font-data-mono text-[10px] uppercase text-text-muted">(from project filter above)</span>
-                </div>
-              ) : (
-                <BrutalistSelect
-                  value={clientId}
-                  onChange={setClientId}
-                  placeholder="-- SELECT ACTIVE CLIENT --"
-                  options={clientOptions}
-                />
-              )}
-            </div>
-
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
-              <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Linked Feature Mapping (Optional)
-              </label>
-              <BrutalistSelect
-                value={featureId}
-                onChange={setFeatureId}
-                placeholder="-- SELECT LINKED FEATURE --"
-                options={featureOptions}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
-              <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Module Descriptor
-              </label>
-              <input
-                required
-                value={module}
-                onChange={(e) => setModule(e.target.value)}
-                placeholder="e.g. AWS EC2 t3.micro"
-                className="w-full bg-white border-4 border-border-strong p-4 font-bold text-lg focus:outline-none focus:border-text-main placeholder:text-text-muted/40 shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
-              <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Billing Category
-              </label>
-              <input
-                required
-                value={billingType}
-                onChange={(e) => setBillingType(e.target.value)}
-                placeholder="e.g. Cloud Server / API Usage"
-                className="w-full bg-white border-4 border-border-strong p-4 font-bold text-lg focus:outline-none focus:border-text-main placeholder:text-text-muted/40 shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
-              <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Evaluated Overheard Price (₹/Month)
-              </label>
-              <div className="flex-1 flex items-center relative">
-                <span className="absolute left-5 font-black text-2xl text-text-muted">₹</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={overhead}
-                  onChange={(e) => setOverhead(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-white border-4 border-border-strong p-4 pl-12 font-data-mono font-black text-2xl focus:outline-none focus:border-text-main placeholder:text-text-muted/30 shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)]"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4">
-            <button
-              type="submit"
-              disabled={submitting || !clientId}
-              className={`font-black text-sm uppercase px-8 py-4 border-4 transition-all flex items-center justify-center gap-3 w-full md:w-auto
-                ${clientId 
-                  ? "bg-[var(--footer-strip)] text-white border-text-main shadow-[6px_6px_0px_0px_var(--brand-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none"
-                  : "bg-bg-base text-text-muted border-border-strong cursor-not-allowed opacity-50"
-                }`}
-            >
-              {submitting ? "Allocating Overhead..." : "[ Commit Infrastructure Cost ]"}
-            </button>
-          </div>
-        </form>
-      </div>
-
       {/* Registry */}
       <div>
         <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
-          Deployed Infrastructure Matrix
+          Cost Items
         </h3>
 
         {loading ? (
-          <p className="font-data-mono text-text-muted">Loading cost registry...</p>
+          <p className="font-data-mono text-text-muted">Loading...</p>
         ) : costs.length === 0 ? (
           <div className="border-4 border-border-strong border-dashed p-12 text-center bg-bg-panel-alt">
-             <p className="font-data-mono uppercase tracking-widest font-bold">No active infrastructure costs documented.</p>
+             <p className="font-data-mono uppercase tracking-widest font-bold">No cost items yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -291,36 +132,41 @@ function CostsTab({ filter }: { filter: ProjectFilterValue }) {
                       <h4 className="font-headline-lg font-black text-2xl uppercase w-2/3 truncate">
                         {c.module}
                       </h4>
-                      <div className="px-3 py-1 font-data-mono text-[10px] font-bold uppercase tracking-widest border-2 bg-[var(--footer-strip)] text-white border-text-main">
-                        ACTIVE RECORD
-                      </div>
                     </div>
 
                     <div className="space-y-4 font-data-mono text-sm">
                       <div className="flex justify-between border-b-2 border-border-strong/30 pb-2">
-                        <span className="text-text-muted uppercase font-bold">Environment Owner</span>
+                        <span className="text-text-muted uppercase font-bold">Client</span>
                         <span className="font-bold">{client?.full_name ?? `#${c.client_id}`}</span>
                       </div>
                       <div className="flex justify-between border-b-2 border-border-strong/30 pb-2">
-                        <span className="text-text-muted uppercase font-bold">Linked Feature</span>
+                        <span className="text-text-muted uppercase font-bold">Feature</span>
                         <span className="font-bold">{feature ? feature.name : "N/A"}</span>
                       </div>
                       <div className="flex justify-between border-b-2 border-border-strong/30 pb-2">
-                        <span className="text-text-muted uppercase font-bold">Billing Architecture</span>
+                        <span className="text-text-muted uppercase font-bold">Billing Type</span>
                         <span className="font-bold">{c.billing_type}</span>
                       </div>
-                      <div className="flex justify-between pt-2">
-                        <span className="text-text-muted uppercase font-black">Monthly Overhead Evaluated</span>
-                        <span className="font-black text-2xl text-brand-green">
-                          ₹{c.monthly_overhead_price.toFixed(2)}
-                        </span>
+                      <div className="pt-2 space-y-1">
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-text-muted uppercase font-black">Monthly Cost</span>
+                          <span className="font-black text-2xl text-brand-green">
+                            ₹{c.monthly_overhead_price.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-text-muted uppercase font-bold text-xs">Yearly Cost (× 12)</span>
+                          <span className="font-bold text-text-muted">
+                            ₹{(c.monthly_overhead_price * 12).toFixed(2)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="p-4 bg-bg-panel-alt border-t-4 border-border-strong flex justify-end relative z-10">
                     <button onClick={() => removeCost(c.id)} className="font-data-mono text-[10px] font-bold uppercase tracking-widest text-coral-red hover:underline flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm">delete</span> ERASE ENTRY (DELETE)
+                      <span className="material-symbols-outlined text-sm">delete</span> DELETE
                     </button>
                   </div>
                 </div>
@@ -337,6 +183,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   const [clients, setClients] = useState<User[]>([]);
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [infraCosts, setInfraCosts] = useState<InfrastructureCostEntry[]>([]);
+  const [clientProjects, setClientProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [clientId, setClientId] = useState("");
@@ -349,6 +196,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const confirm = useConfirm();
+  const maintenanceVersion = useWsEvent("maintenance");
 
   async function loadAll() {
     const recordsEndpoint = filter.projectId
@@ -367,24 +215,37 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
 
   useEffect(() => {
     loadAll();
-  }, [filter.projectId]);
+  }, [filter.projectId, maintenanceVersion]);
 
   useEffect(() => {
     if (filter.clientId) setClientId(filter.clientId);
   }, [filter.clientId]);
 
-  const selectedClient = clients.find((c) => c.id === Number(clientId));
+  useEffect(() => {
+    if (!clientId) {
+      setClientProjects([]);
+      return;
+    }
+    apiRequest<Project[]>(`/api/admin/users/${clientId}/projects`).then(setClientProjects);
+  }, [clientId]);
+
+  // Maintenance price is per-project now: use the filter's project if one is selected,
+  // otherwise fall back to the client's most recently created project (matching the
+  // server-side resolution used when POSTing to the client-scoped /records endpoint).
+  const selectedProject = filter.projectId
+    ? clientProjects.find((p) => String(p.id) === filter.projectId)
+    : clientProjects[0];
   const clientInfraCosts = infraCosts.filter((c) => c.client_id === Number(clientId));
   const monthlyInfraTotal = clientInfraCosts.reduce((sum, c) => sum + c.monthly_overhead_price, 0);
   const annualInfraTotal = monthlyInfraTotal * 12;
-  const basePrice = selectedClient?.maintenance_price ?? 0;
+  const basePrice = selectedProject?.maintenance_price ?? 0;
   const suggestedAmount = Math.round((basePrice + annualInfraTotal) * 100) / 100;
 
   useEffect(() => {
     if (!amountTouched) {
-      setAmount(selectedClient && selectedClient.maintenance_price !== null ? String(suggestedAmount) : "");
+      setAmount(selectedProject && selectedProject.maintenance_price !== null ? String(suggestedAmount) : "");
     }
-  }, [clientId, suggestedAmount, amountTouched, selectedClient]);
+  }, [clientId, suggestedAmount, amountTouched, selectedProject]);
 
   async function generateCycle(e: React.FormEvent) {
     e.preventDefault();
@@ -393,8 +254,8 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
       setError("Please fill all fields");
       return;
     }
-    if (!selectedClient || selectedClient.maintenance_price === null) {
-      setError("This client does not have a maintenance_price set in their profile. Update their user profile first.");
+    if (!selectedProject || selectedProject.maintenance_price === null) {
+      setError("This client's project does not have a maintenance_price set. Update the project's billing configuration first.");
       return;
     }
     try {
@@ -429,7 +290,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
   }
 
   async function approveProof(id: number) {
-    const ok = await confirm("Approve this maintenance compliance proof? This cannot be undone.");
+    const ok = await confirm("Approve this payment? This can't be undone.");
     if (!ok) return;
     try {
       await apiRequest(`/api/admin/maintenance/records/${id}/approve`, { method: "POST" });
@@ -464,7 +325,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
       {/* Creation Form */}
       <div className="border-4 border-border-strong bg-bg-panel-alt p-6 md:p-10 shadow-[12px_12px_0px_0px_var(--shadow-strong)] relative">
         <h3 className="font-data-mono text-lg font-black uppercase tracking-widest text-text-main mb-8 border-b-4 border-border-strong pb-4">
-          SYSTEM TERMINAL: GENERATE MAINTENANCE CYCLE
+          Create a Payment
         </h3>
         
         <form onSubmit={generateCycle} className="space-y-8">
@@ -473,7 +334,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-50">
             <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] lg:col-span-1">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Target Environment Mapping
+                Client
               </label>
               {filter.clientId ? (
                 <div className="bg-bg-base border-4 border-border-strong p-4 font-bold text-lg text-text-main">
@@ -484,7 +345,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                 <BrutalistSelect
                   value={clientId}
                   onChange={setClientId}
-                  placeholder="-- SELECT ACTIVE CLIENT --"
+                  placeholder="Select a client"
                   options={clientOptions}
                 />
               )}
@@ -492,20 +353,20 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
 
             <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Cycle Year Designator
+                Year
               </label>
               <input
                 type="number"
                 required
                 value={cycleYear}
                 onChange={(e) => setCycleYear(e.target.value)}
-                className="w-full bg-white border-4 border-border-strong p-4 font-bold text-lg focus:outline-none focus:border-text-main shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)]"
+                className="w-full bg-white border-4 border-border-strong p-4 font-bold text-lg focus:outline-none focus:border-text-main shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
 
             <div className="flex flex-col gap-4 bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)]">
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted">
-                Enforcement Deadline (Due Date)
+                Due Date
               </label>
               <BrutalistDatePicker
                 required
@@ -518,25 +379,28 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
 
           {clientId && (
             <div className="bg-bg-base border-4 border-border-strong p-6 shadow-[6px_6px_0px_0px_var(--shadow-strong)] relative z-0">
-              <div className="font-data-mono text-sm space-y-2 mb-6">
-                <div className="flex justify-between">
+              <div className="font-data-mono text-[10px] uppercase tracking-widest text-text-muted mb-4">
+                How the suggested amount is calculated (all figures per year)
+              </div>
+              <div className="font-data-mono text-sm space-y-3 mb-6">
+                <div className="flex justify-between items-baseline">
                   <span className="text-text-muted uppercase font-bold">Base Maintenance Price</span>
-                  <span className="font-bold">₹{basePrice.toFixed(2)}</span>
+                  <span className="font-black text-lg">₹{basePrice.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-baseline">
                   <span className="text-text-muted uppercase font-bold">
-                    Infrastructure Overhead ({clientInfraCosts.length} active, ₹{monthlyInfraTotal.toFixed(2)}/mo)
+                    + Cost Breakdown ({clientInfraCosts.length} item{clientInfraCosts.length === 1 ? "" : "s"} × ₹{monthlyInfraTotal.toFixed(2)}/mo × 12)
                   </span>
-                  <span className="font-bold">₹{annualInfraTotal.toFixed(2)} / yr</span>
+                  <span className="font-black text-lg">₹{annualInfraTotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between border-t-2 border-border-strong/30 pt-2">
-                  <span className="text-text-muted uppercase font-black">Suggested Cycle Total</span>
-                  <span className="font-black">₹{suggestedAmount.toFixed(2)}</span>
+                <div className="flex justify-between items-baseline border-t-2 border-border-strong/30 pt-3">
+                  <span className="text-text-muted uppercase font-black">= Suggested Amount</span>
+                  <span className="font-black text-2xl text-brand-green">₹{suggestedAmount.toFixed(2)}</span>
                 </div>
               </div>
 
               <label className="font-label-caps font-black uppercase tracking-widest text-text-muted block mb-4">
-                Final Cycle Amount (editable)
+                Amount to Charge (editable)
               </label>
               <div className="flex items-center relative">
                 <span className="absolute left-5 font-black text-2xl text-text-muted">₹</span>
@@ -549,7 +413,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                     setAmount(e.target.value);
                     setAmountTouched(true);
                   }}
-                  className="w-full bg-white border-4 border-border-strong p-4 pl-12 font-data-mono font-black text-2xl focus:outline-none focus:border-text-main shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)]"
+                  className="w-full bg-white border-4 border-border-strong p-4 pl-12 font-data-mono font-black text-2xl focus:outline-none focus:border-text-main shadow-[inset_4px_4px_0px_0px_rgba(0,0,0,0.05)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 {amountTouched && (
                   <button
@@ -569,7 +433,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
               type="submit"
               className="bg-[var(--footer-strip)] text-white font-black text-sm uppercase px-8 py-4 border-4 border-text-main shadow-[6px_6px_0px_0px_var(--brand-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex items-center justify-center gap-3 w-full md:w-auto"
             >
-              [ Broadcast Compliance Requirement ]
+              Create Payment
             </button>
           </div>
         </form>
@@ -578,14 +442,14 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
       {/* Compliance Log Matrix */}
       <div>
         <h3 className="font-display-xl text-3xl font-black uppercase text-text-main mb-6 border-b-4 border-border-strong pb-4">
-          Compliance Surveillance Matrix
+          All Payments
         </h3>
-        
+
         {loading ? (
-          <p className="font-data-mono text-text-muted">Loading compliance states...</p>
+          <p className="font-data-mono text-text-muted">Loading...</p>
         ) : records.length === 0 ? (
           <div className="border-4 border-border-strong border-dashed p-12 text-center bg-bg-panel-alt">
-             <p className="font-data-mono uppercase tracking-widest font-bold">No maintenance cycles found.</p>
+             <p className="font-data-mono uppercase tracking-widest font-bold">No payments yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -597,10 +461,10 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                     <div className="flex justify-between items-start mb-6">
                       <div>
                         <h4 className="font-headline-lg font-black text-2xl uppercase">
-                          CYCLE {r.cycle_year}
+                          {r.cycle_year} Maintenance Fee
                         </h4>
                         <div className="font-data-mono text-sm text-text-muted mt-1 uppercase font-bold">
-                          Owner: {client?.full_name ?? `#${r.client_id}`}
+                          Client: {client?.full_name ?? `#${r.client_id}`}
                         </div>
                       </div>
                       <div className="flex flex-col items-end">
@@ -613,17 +477,17 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
 
                     <div className="font-data-mono text-sm border-t-2 border-border-strong/30 pt-4 mb-4">
                       <div className="flex justify-between">
-                        <span className="text-text-muted uppercase font-bold">Enforcement Deadline</span>
-                        <span className="font-bold">{new Date(r.due_date).toLocaleDateString()}</span>
+                        <span className="text-text-muted uppercase font-bold">Due Date</span>
+                        <span className="font-bold">{formatDate(r.due_date)}</span>
                       </div>
                     </div>
 
                     {r.proof_file_path && (
                       <div className="mt-4 p-4 bg-bg-panel-alt border-4 border-border-strong flex flex-col gap-3">
                         <div className="flex justify-between items-center">
-                          <span className="font-label-caps font-black text-xs uppercase tracking-widest">TRANSACTION VOUCHER</span>
+                          <span className="font-label-caps font-black text-xs uppercase tracking-widest">PAYMENT RECEIPT</span>
                           <a href={fileUrl(r.proof_file_path)} target="_blank" rel="noreferrer" className="text-accent underline font-data-mono text-sm font-bold flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">open_in_new</span> REVIEW PROOF
+                            <span className="material-symbols-outlined text-sm">open_in_new</span> VIEW RECEIPT
                           </a>
                         </div>
 
@@ -632,7 +496,7 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                             {rejectingId === r.id ? (
                               <div className="space-y-4">
                                 <label className="block font-data-mono text-xs font-bold uppercase tracking-widest text-coral-red">
-                                  Define Rejection Reason
+                                  Reason for Rejection
                                 </label>
                                 <textarea
                                   value={rejectionReason}
@@ -642,10 +506,10 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                                 />
                                 <div className="flex gap-4">
                                   <button onClick={() => rejectProof(r.id)} className="bg-coral-red text-white font-black uppercase px-4 py-2 border-4 border-coral-red flex-1">
-                                    EXECUTE REJECTION
+                                    Reject
                                   </button>
                                   <button onClick={() => setRejectingId(null)} className="bg-bg-panel-alt font-black uppercase px-4 py-2 border-4 border-border-strong text-text-muted flex-1">
-                                    ABORT
+                                    Cancel
                                   </button>
                                 </div>
                               </div>
@@ -653,20 +517,20 @@ function ComplianceTab({ filter }: { filter: ProjectFilterValue }) {
                               <div className="flex gap-4">
                                 <button onClick={() => approveProof(r.id)} className="bg-forest-green text-white font-black text-sm uppercase px-4 py-3 flex-1 flex items-center justify-center gap-2 border-4 border-forest-green shadow-[4px_4px_0px_0px_var(--forest-green)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all">
                                   <span className="material-symbols-outlined">check_circle</span>
-                                  VERIFY & APPROVE
+                                  Approve
                                 </button>
                                 <button onClick={() => setRejectingId(r.id)} className="bg-coral-red text-white font-black text-sm uppercase px-4 py-3 flex-1 flex items-center justify-center gap-2 border-4 border-coral-red shadow-[4px_4px_0px_0px_var(--coral-red)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all">
                                   <span className="material-symbols-outlined">cancel</span>
-                                  REJECT PROOF
+                                  Reject
                                 </button>
                               </div>
                             )}
                           </div>
                         )}
-                        
+
                         {r.status === "rejected" && r.rejection_reason && (
                           <div className="mt-2 bg-coral-red/10 border-l-4 border-coral-red p-3">
-                            <span className="font-data-mono text-[10px] font-bold text-coral-red uppercase block mb-1">REJECTION DIAGNOSTIC:</span>
+                            <span className="font-data-mono text-[10px] font-bold text-coral-red uppercase block mb-1">Rejection Reason:</span>
                             <span className="font-mono text-sm text-coral-red">{r.rejection_reason}</span>
                           </div>
                         )}

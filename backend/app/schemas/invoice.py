@@ -2,12 +2,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.enums import InvoiceStatus
+from app.models.enums import InvoiceLineItemType, InvoiceStatus
 
 
 class InvoiceCreateRequest(BaseModel):
     client_id: int
     feature_ids: list[int]
+    maintenance_record_ids: list[int] = []
     tax_amount: float = 0
     notes: str | None = None
 
@@ -17,6 +18,7 @@ class ProjectInvoiceCreateRequest(BaseModel):
     project on the path (a project has exactly one client)."""
 
     feature_ids: list[int]
+    maintenance_record_ids: list[int] = []
     tax_amount: float = 0
     notes: str | None = None
 
@@ -25,7 +27,9 @@ class InvoiceLineItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    item_type: InvoiceLineItemType
     feature_request_id: int | None
+    maintenance_record_id: int | None
     description: str
     frontend_hours: float
     backend_hours: float
@@ -54,3 +58,8 @@ class InvoiceOut(BaseModel):
 class InvoiceUpdateRequest(BaseModel):
     tax_amount: float
     notes: str | None = None
+
+
+class InvoiceLineItemsAddRequest(BaseModel):
+    feature_ids: list[int] = []
+    maintenance_record_ids: list[int] = []

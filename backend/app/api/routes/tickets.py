@@ -9,6 +9,7 @@ from app.models.project import Project
 from app.models.ticket import SupportTicket, TicketAttachment
 from app.schemas.ticket import TicketOut
 from app.services.file_storage import save_upload
+from app.services.realtime import manager
 
 router = APIRouter(prefix="/api/projects/{project_id}/tickets", tags=["tickets"], dependencies=[Depends(require_client)])
 
@@ -35,12 +36,12 @@ def get_my_ticket(ticket_id: int, project: Project = Depends(get_owned_project),
 def file_ticket(
     name: str = Form(...),
     description: str = Form(...),
-    file_upload: UploadFile = File(...),
+    file_upload: list[UploadFile] = File(...),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ):
-    if not file_upload or not file_upload.filename:
-        raise BusinessRuleViolation("An attachment is required to file an incident ticket")
+    if not file_upload or len(file_upload) == 0 or not file_upload[0].filename:
+        raise BusinessRuleViolation("At least one attachment is required to file an incident ticket")
 
     ticket = SupportTicket(
         client_id=project.client_id, project_id=project.id, name=name, description=description, status=TicketStatus.OPEN
@@ -48,12 +49,16 @@ def file_ticket(
     db.add(ticket)
     db.flush()
 
-    relative_path, original_name = save_upload(file_upload, subfolder=f"tickets/{ticket.id}")
-    db.add(
-        TicketAttachment(
-            ticket_id=ticket.id, file_path=relative_path, original_filename=original_name, is_proof=False
-        )
-    )
+    for file in file_upload:
+        if file.filename:
+            relative_path, original_name = save_upload(file, subfolder=f"tickets/{ticket.id}")
+            db.add(
+                TicketAttachment(
+                    ticket_id=ticket.id, file_path=relative_path, original_filename=original_name, is_proof=False
+                )
+            )
+            
     db.commit()
     db.refresh(ticket)
+    manager.broadcast_change("tickets", client_id=ticket.client_id)
     return ticket

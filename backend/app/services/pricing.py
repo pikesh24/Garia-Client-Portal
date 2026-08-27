@@ -2,20 +2,20 @@ from sqlalchemy.orm import Session
 
 from app.models.discount import Discount
 from app.models.enums import DiscountType
-from app.models.user import User
+from app.models.project import Project
 
 
 def compute_feature_price(
-    client: User,
+    project: Project,
     frontend_hours: float | None,
     backend_hours: float | None,
     production_hours: float | None,
 ) -> float:
-    """Computes a feature's price from the client's hourly rates, never an admin-entered value."""
+    """Computes a feature's price from the project's hourly rates, never an admin-entered value."""
     return round(
-        float(frontend_hours or 0) * float(client.hourly_rate_frontend or 0)
-        + float(backend_hours or 0) * float(client.hourly_rate_backend or 0)
-        + float(production_hours or 0) * float(client.hourly_rate_production or 0),
+        float(frontend_hours or 0) * float(project.hourly_rate_frontend or 0)
+        + float(backend_hours or 0) * float(project.hourly_rate_backend or 0)
+        + float(production_hours or 0) * float(project.hourly_rate_production or 0),
         2,
     )
 

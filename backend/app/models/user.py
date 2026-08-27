@@ -1,6 +1,4 @@
-from datetime import date
-
-from sqlalchemy import Boolean, Date, Enum, Numeric, String
+from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
@@ -17,13 +15,9 @@ class User(Base, TimestampMixin):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Client-only configuration fields (null for admin users)
+    # Client-only configuration field (null for admin users). Hourly rates, maintenance
+    # price, and project start date live on Project instead -- billing is per-project.
     can_book_offline_meeting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    hourly_rate_frontend: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    hourly_rate_backend: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    hourly_rate_production: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    maintenance_price: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    project_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -32,3 +26,7 @@ class User(Base, TimestampMixin):
     @property
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
+
+    @property
+    def is_developer(self) -> bool:
+        return self.role == UserRole.DEVELOPER

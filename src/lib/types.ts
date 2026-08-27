@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "client";
+export type UserRole = "admin" | "client" | "developer";
 
 export interface User {
   id: number;
@@ -7,11 +7,6 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   can_book_offline_meeting: boolean;
-  hourly_rate_frontend: number | null;
-  hourly_rate_backend: number | null;
-  hourly_rate_production: number | null;
-  maintenance_price: number | null;
-  project_start_date: string | null;
   created_at: string;
 }
 
@@ -22,6 +17,11 @@ export interface Project {
   client_id: number;
   name: string;
   status: ProjectStatus;
+  hourly_rate_frontend: number | null;
+  hourly_rate_backend: number | null;
+  hourly_rate_production: number | null;
+  maintenance_price: number | null;
+  project_start_date: string | null;
   created_at: string;
 }
 
@@ -42,6 +42,7 @@ export interface Meeting {
   agenda: string;
   status: MeetingStatus;
   meeting_link: string | null;
+  meeting_code: string | null;
   confirmed_start_datetime: string | null;
   confirmed_end_datetime: string | null;
   pending_start_datetime: string;
@@ -63,8 +64,33 @@ export interface MeetingBlock {
   reason: string | null;
 }
 
+export type RecurrenceFrequency = "weekly" | "monthly" | "yearly";
+
+export interface RecurringMeetingBlock {
+  id: number;
+  frequency: RecurrenceFrequency;
+  day_of_week: number | null;
+  day_of_month: number | null;
+  month: number | null;
+  until: string | null;
+  reason: string | null;
+}
+
+export interface RecurringMeetingBlockCreatePayload {
+  frequency: RecurrenceFrequency;
+  day_of_week?: number | null;
+  day_of_month?: number | null;
+  month?: number | null;
+  until?: string | null;
+  reason: string | null;
+}
+
+export interface BlockedDate {
+  date: string;
+  reason: string | null;
+}
+
 export type TicketStatus = "open" | "in_progress" | "out_of_scope" | "resolved";
-export type TicketPriority = "low" | "medium" | "high" | "critical";
 
 export interface TicketAttachment {
   id: number;
@@ -81,6 +107,17 @@ export interface TicketStatusHistory {
   created_at: string;
 }
 
+export interface DeveloperSummary {
+  id: number;
+  full_name: string;
+  email: string;
+}
+
+export interface TicketAssignment {
+  id: number;
+  developer: DeveloperSummary;
+}
+
 export interface Ticket {
   id: number;
   client_id: number;
@@ -88,11 +125,14 @@ export interface Ticket {
   name: string;
   description: string;
   status: TicketStatus;
-  priority: TicketPriority;
   resolution_text: string | null;
   attachments: TicketAttachment[];
   status_history: TicketStatusHistory[];
   created_at: string;
+  // Populated only on admin responses.
+  assignments?: TicketAssignment[];
+  // Populated only on developer "my queue" responses.
+  queue_position?: number;
 }
 
 export type FeatureRequestStatus =
@@ -106,7 +146,7 @@ export type FeatureRequestStatus =
 
 export interface FeatureRequestMessage {
   id: number;
-  sender_role: "client" | "admin";
+  sender_role: "client" | "admin" | "developer";
   body: string;
   created_at: string;
 }
@@ -160,9 +200,13 @@ export interface Discount {
 
 export type InvoiceStatus = "draft" | "finalized" | "paid";
 
+export type InvoiceLineItemType = "feature" | "maintenance";
+
 export interface InvoiceLineItem {
   id: number;
+  item_type: InvoiceLineItemType;
   feature_request_id: number | null;
+  maintenance_record_id: number | null;
   description: string;
   frontend_hours: number;
   backend_hours: number;

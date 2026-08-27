@@ -13,6 +13,7 @@ from app.models.meeting_block import MeetingBlock
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.meeting import (
+    BlockedDateOut,
     BusyRangeOut,
     MeetingBlockOut,
     MeetingCreateRequest,
@@ -21,7 +22,13 @@ from app.schemas.meeting import (
     MeetingReschedulePropose,
 )
 from app.services.email import notify_meeting_event
-from app.services.meeting_conflicts import ensure_business_hours, find_conflict_reason, list_busy_ranges
+from app.services.realtime import manager
+from app.services.meeting_conflicts import (
+    blocked_dates_in_range,
+    ensure_business_hours,
+    find_conflict_reason,
+    list_busy_ranges,
+)
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/meetings", tags=["meetings"], dependencies=[Depends(require_client)]
@@ -50,8 +57,19 @@ def get_busy_ranges(
 ):
     day_start = datetime.combine(date, time.min, tzinfo=timezone.utc)
     day_end = datetime.combine(date, time.max, tzinfo=timezone.utc)
-    ranges = list_busy_ranges(db, day_start, day_end, exclude_meeting_id=exclude_meeting_id)
+    ranges = list_busy_ranges(db, day_start, day_end, exclude_meeting_id=exclude_meeting_id, check_date=date)
     return [BusyRangeOut(start_datetime=s, end_datetime=e) for s, e in ranges]
+
+
+@router.get("/blocked-dates", response_model=list[BlockedDateOut])
+def get_blocked_dates(
+    range_start: date_type = Query(...), range_end: date_type = Query(...), db: Session = Depends(get_db)
+):
+    if range_end < range_start:
+        raise BusinessRuleViolation("range_end must not be before range_start")
+    if (range_end - range_start).days > 400:
+        raise BusinessRuleViolation("Range too large")
+    return [BlockedDateOut(date=d, reason=r) for d, r in blocked_dates_in_range(db, range_start, range_end)]
 
 
 @router.get("/blocks", response_model=list[MeetingBlockOut])
@@ -99,6 +117,7 @@ def request_meeting(
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
     return meeting
 
 
@@ -124,6 +143,7 @@ def cancel_meeting(
     db.commit()
     db.refresh(meeting)
     notify_meeting_event(current_user.email, meeting.id, "cancelled")
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
     return meeting
 
 
@@ -152,6 +172,7 @@ def propose_reschedule(
     meeting.status = MeetingStatus.RESCHEDULE_PENDING
     db.commit()
     db.refresh(meeting)
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
     return meeting
 
 
@@ -173,6 +194,7 @@ def accept_reschedule(
     db.commit()
     db.refresh(meeting)
     notify_meeting_event(current_user.email, meeting.id, "confirmed")
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
     return meeting
 
 
@@ -194,4 +216,5 @@ def deny_reschedule(
     meeting.status = MeetingStatus.CONFIRMED
     db.commit()
     db.refresh(meeting)
+    manager.broadcast_change("meetings", client_id=meeting.client_id)
     return meeting

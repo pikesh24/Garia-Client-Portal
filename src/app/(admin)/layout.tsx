@@ -5,11 +5,13 @@ import { RouteGuard } from "@/components/RouteGuard";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { BrandWatermark } from "@/components/ui";
+import { useAuth } from "@/lib/auth";
 
 const labels: Record<string, string> = {
   "/admin": "GLOBAL DASHBOARD",
   "/admin/profile": "PROFILE",
   "/admin/users": "CLIENT ACCOUNTS MATRIX",
+  "/admin/developers": "DEVELOPER ACCOUNTS",
   "/admin/meetings": "UNIFIED MEETINGS CALENDAR",
   "/admin/tickets": "SUPPORT TICKET COMMAND",
   "/admin/feature-requests": "FEATURES & PROPOSALS PIPELINE",
@@ -17,12 +19,13 @@ const labels: Record<string, string> = {
   "/admin/feature-requests/requests": "EXTRA FEATURE REQUESTS",
   "/admin/billing": "BILLING, INVOICES & DISCOUNTS",
   "/admin/maintenance": "MAINTENANCE",
+  "/developer": "MY QUEUE",
+  "/developer/profile": "PROFILE",
 };
 
 // Dynamic routes (client/project detail pages) can't be keyed by exact pathname above.
 const DYNAMIC_LABELS: [RegExp, string][] = [
   [/^\/admin\/users\/[^/]+\/projects\/[^/]+\/base-features$/, "BASE + EXTRA FEATURES"],
-  [/^\/admin\/users\/[^/]+\/projects\/[^/]+$/, "PROJECT OVERVIEW"],
   [/^\/admin\/users\/[^/]+\/projects$/, "CLIENT PROJECTS"],
   [/^\/admin\/users\/[^/]+$/, "CLIENT DETAIL"],
 ];
@@ -37,14 +40,16 @@ function labelFor(pathname: string): string {
 
 export default function AdminPortalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user } = useAuth();
   const label = labelFor(pathname);
+  const portalRoot = user?.role === "developer" ? "DEVELOPER PORTAL" : "ADMIN PORTAL";
 
   return (
-    <RouteGuard role="admin">
+    <RouteGuard role={["admin", "developer"]}>
       <div className="min-h-screen">
         <BrandWatermark />
         <Sidebar variant="admin" />
-        <Header breadcrumbs={label === "ADMIN PORTAL" ? [label] : ["ADMIN PORTAL", label]} />
+        <Header breadcrumbs={label === "ADMIN PORTAL" ? [portalRoot] : [portalRoot, label]} />
         <main className="md:ml-64 pt-20 md:pt-24 pb-20 px-gutter md:px-margin-page z-10 relative">
           {children}
         </main>
@@ -52,4 +57,3 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
     </RouteGuard>
   );
 }
-

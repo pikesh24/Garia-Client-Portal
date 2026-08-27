@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_token
+from app.core.security import resolve_user_id_from_access_token
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.project import Project
@@ -17,12 +17,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            raise credentials_exception
-        user_id = int(payload.get("sub"))
-    except (ValueError, TypeError):
+    user_id = resolve_user_id_from_access_token(token)
+    if user_id is None:
         raise credentials_exception
 
     user = db.get(User, user_id)
@@ -40,6 +36,18 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 def require_client(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.CLIENT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Client access required")
+    return user
+
+
+def require_developer(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.DEVELOPER:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer access required")
+    return user
+
+
+def require_admin_or_developer(user: User = Depends(get_current_user)) -> User:
+    if user.role not in (UserRole.ADMIN, UserRole.DEVELOPER):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or developer access required")
     return user
 
 

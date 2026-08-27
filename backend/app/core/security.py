@@ -29,6 +29,21 @@ def decode_token(token: str) -> dict:
         raise ValueError("Invalid or expired token") from exc
 
 
+def resolve_user_id_from_access_token(token: str) -> int | None:
+    """Decode an access token and return the subject user id, or None if invalid.
+
+    Shared by the HTTP bearer-token flow and the WebSocket query-param flow so
+    both paths validate tokens identically.
+    """
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return None
+        return int(payload.get("sub"))
+    except (ValueError, TypeError):
+        return None
+
+
 def generate_refresh_token() -> str:
     return secrets.token_urlsafe(48)
 

@@ -3,16 +3,29 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
-import { BusyRange, Meeting, MeetingBlock } from "@/lib/types";
+import { BlockedDate, BusyRange, Meeting, MeetingBlock, RecurringMeetingBlock, RecurringMeetingBlockCreatePayload } from "@/lib/types";
 import { Button, Card, CardBody, CardHeader, PageHeader, StatusBadge } from "@/components/ui";
-import { BlockTimeModal, MeetingActions, MeetingDetailsModal, TimeRange, meetingDisplayRange, formatTimeFn } from "@/components/MeetingCalendar";
+import { BlockTimeModal, MeetingActions, MeetingDetailsModal, TimeRange, meetingDisplayRange, formatTimeFn, toDateKey } from "@/components/MeetingCalendar";
 import { AdminProjectFilter, useAdminProjectFilter } from "@/components/AdminProjectFilter";
+import { useWsEvent } from "@/components/WebSocketProvider";
 
-function toLocalDateParam(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function describeRule(rule: RecurringMeetingBlock): string {
+  if (rule.frequency === "weekly") return `Every ${WEEKDAY_NAMES[rule.day_of_week ?? 0]}`;
+  if (rule.frequency === "monthly") return `Every ${rule.day_of_month}${ordinalSuffix(rule.day_of_month ?? 1)} of the month`;
+  return `Every ${MONTH_NAMES[(rule.month ?? 1) - 1]} ${rule.day_of_month}${ordinalSuffix(rule.day_of_month ?? 1)}`;
+}
+
+function ordinalSuffix(n: number): string {
+  if (n % 10 === 1 && n % 100 !== 11) return "st";
+  if (n % 10 === 2 && n % 100 !== 12) return "nd";
+  if (n % 10 === 3 && n % 100 !== 13) return "rd";
+  return "th";
 }
 
 export default function AdminMeetingsPage() {
@@ -21,10 +34,13 @@ export default function AdminMeetingsPage() {
   const [filter, setFilter] = useAdminProjectFilter();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [blocks, setBlocks] = useState<MeetingBlock[]>([]);
+  const [recurringBlocks, setRecurringBlocks] = useState<RecurringMeetingBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [blockModalInitialMode, setBlockModalInitialMode] = useState<"one-time" | "recurring">("one-time");
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const meetingsVersion = useWsEvent("meetings");
 
   async function load() {
     const endpoint = filter.projectId
@@ -44,29 +60,48 @@ export default function AdminMeetingsPage() {
     setBlocks(data);
   }
 
+  async function loadRecurringBlocks() {
+    const data = await apiRequest<RecurringMeetingBlock[]>("/api/admin/meetings/recurring-blocks");
+    setRecurringBlocks(data);
+  }
+
   useEffect(() => {
     load();
-  }, [filter.projectId]);
+  }, [filter.projectId, meetingsVersion]);
 
   useEffect(() => {
     loadBlocks();
-  }, []);
+    loadRecurringBlocks();
+  }, [meetingsVersion]);
 
   async function deleteBlock(id: number) {
     await apiRequest(`/api/admin/meetings/blocks/${id}`, { method: "DELETE" });
     await loadBlocks();
   }
 
+  async function deleteRecurringBlock(id: number) {
+    await apiRequest(`/api/admin/meetings/recurring-blocks/${id}`, { method: "DELETE" });
+    await loadRecurringBlocks();
+  }
+
   const fetchBusyRanges = async (date: Date, excludeMeetingId?: number): Promise<TimeRange[]> => {
-    const params = new URLSearchParams({ date: toLocalDateParam(date) });
+    const params = new URLSearchParams({ date: toDateKey(date) });
     if (excludeMeetingId) params.set("exclude_meeting_id", String(excludeMeetingId));
     const data = await apiRequest<BusyRange[]>(`/api/admin/meetings/busy?${params.toString()}`);
     return data.map((r) => ({ start: new Date(r.start_datetime), end: new Date(r.end_datetime) }));
   };
 
+  const fetchBlockedDates = async (rangeStart: Date, rangeEnd: Date): Promise<BlockedDate[]> => {
+    const params = new URLSearchParams({ range_start: toDateKey(rangeStart), range_end: toDateKey(rangeEnd) });
+    return apiRequest<BlockedDate[]>(`/api/admin/meetings/blocked-dates?${params.toString()}`);
+  };
+
   const actions: MeetingActions = {
-    onConfirm: async (m, meetingLink) => {
-      await apiRequest(`/api/admin/meetings/${m.id}/confirm`, { method: "PATCH", body: { meeting_link: meetingLink } });
+    onConfirm: async (m, meetingLink, meetingCode) => {
+      await apiRequest(`/api/admin/meetings/${m.id}/confirm`, {
+        method: "PATCH",
+        body: { meeting_link: meetingLink || null, meeting_code: meetingCode || null },
+      });
       await load();
     },
     onDeny: async (m, reason) => {
@@ -95,17 +130,23 @@ export default function AdminMeetingsPage() {
 
       <AdminProjectFilter value={filter} onChange={setFilter} />
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card className="flex flex-col">
           <CardHeader>Blocked Time Management</CardHeader>
           <CardBody className="flex flex-col flex-1">
             <div className="flex justify-between items-center mb-4">
               <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">Prevent bookings on specific dates</p>
-              <Button onClick={() => setBlockModalOpen(true)} size="sm">
+              <Button
+                onClick={() => {
+                  setBlockModalInitialMode("one-time");
+                  setBlockModalOpen(true);
+                }}
+                className="!px-4 !py-2 text-xs"
+              >
                 + Block Time Off
               </Button>
             </div>
-            
+
             {blocks.length === 0 ? (
               <div className="flex-1 flex items-center justify-center border-4 border-dashed border-border-strong/30 bg-bg-panel-alt p-4">
                 <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">No blocked time ranges.</p>
@@ -124,6 +165,47 @@ export default function AdminMeetingsPage() {
                       {b.reason && <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{b.reason}</p>}
                     </div>
                     <button onClick={() => deleteBlock(b.id)} className="text-coral-red hover:underline font-data-mono text-[10px] uppercase font-black ml-2">
+                      REMOVE
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardHeader>Recurring Blocks</CardHeader>
+          <CardBody className="flex flex-col flex-1">
+            <div className="flex justify-between items-center mb-4">
+              <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">Block entire days on a repeating schedule</p>
+              <Button
+                onClick={() => {
+                  setBlockModalInitialMode("recurring");
+                  setBlockModalOpen(true);
+                }}
+                className="!px-4 !py-2 text-xs"
+              >
+                + Add Recurring Rule
+              </Button>
+            </div>
+
+            {recurringBlocks.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center border-4 border-dashed border-border-strong/30 bg-bg-panel-alt p-4">
+                <p className="font-data-mono text-[10px] uppercase font-bold tracking-widest text-text-muted">No recurring rules.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[120px] overflow-y-auto custom-scrollbar pr-2 flex-1">
+                {recurringBlocks.map((rule) => (
+                  <div key={rule.id} className="flex items-center justify-between border-2 border-border-strong bg-bg-panel-alt p-2">
+                    <div>
+                      <p className="font-data-mono text-xs font-bold text-text-main uppercase">{describeRule(rule)}</p>
+                      <p className="text-[10px] text-text-muted font-bold uppercase mt-1">
+                        {rule.until ? `Until ${rule.until}` : "No end date"}
+                      </p>
+                      {rule.reason && <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{rule.reason}</p>}
+                    </div>
+                    <button onClick={() => deleteRecurringBlock(rule.id)} className="text-coral-red hover:underline font-data-mono text-[10px] uppercase font-black ml-2">
                       REMOVE
                     </button>
                   </div>
@@ -190,6 +272,7 @@ export default function AdminMeetingsPage() {
         setError={setDetailError}
         onClose={() => setActiveMeeting(null)}
         fetchBusyRanges={fetchBusyRanges}
+        fetchBlockedDates={fetchBlockedDates}
       />
 
       <BlockTimeModal
@@ -197,12 +280,24 @@ export default function AdminMeetingsPage() {
         onClose={() => setBlockModalOpen(false)}
         minDate={new Date()}
         fetchBusyRanges={fetchBusyRanges}
+        fetchBlockedDates={fetchBlockedDates}
+        initialMode={blockModalInitialMode}
         onCreate={async (start, end, reason) => {
           await apiRequest("/api/admin/meetings/blocks", {
             method: "POST",
             body: { start_datetime: start.toISOString(), end_datetime: end.toISOString(), reason: reason || null },
           });
           await loadBlocks();
+        }}
+        onPreviewConflicts={async (payload: RecurringMeetingBlockCreatePayload) =>
+          apiRequest<Meeting[]>("/api/admin/meetings/recurring-blocks/preview-conflicts", {
+            method: "POST",
+            body: payload,
+          })
+        }
+        onCreateRecurring={async (payload: RecurringMeetingBlockCreatePayload) => {
+          await apiRequest("/api/admin/meetings/recurring-blocks", { method: "POST", body: payload });
+          await loadRecurringBlocks();
         }}
       />
     </div>

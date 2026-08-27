@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin_or_developer
 from app.core.exceptions import BusinessRuleViolation, IrreversibleActionConflict
 from app.db.session import get_db
 from app.models.enums import MaintenanceStatus
@@ -21,19 +21,20 @@ from app.schemas.maintenance import (
     ProjectMaintenanceCycleCreateRequest,
 )
 from app.services.email import notify_maintenance_proof_rejected
+from app.services.realtime import manager
 
-router = APIRouter(prefix="/api/admin/maintenance", tags=["admin-maintenance"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/admin/maintenance", tags=["admin-maintenance"], dependencies=[Depends(require_admin_or_developer)])
 
 records_project_scoped_router = APIRouter(
     prefix="/api/admin/projects/{project_id}/maintenance/records",
     tags=["admin-maintenance"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 infra_costs_project_scoped_router = APIRouter(
     prefix="/api/admin/projects/{project_id}/maintenance/infrastructure-costs",
     tags=["admin-maintenance"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_developer)],
 )
 
 
@@ -52,24 +53,27 @@ def list_maintenance_records(db: Session = Depends(get_db)):
 @router.post("/records", response_model=MaintenanceRecordOut, status_code=status.HTTP_201_CREATED)
 def create_maintenance_cycle(payload: MaintenanceCycleCreateRequest, db: Session = Depends(get_db)):
     client = db.get(User, payload.client_id)
-    if not client or client.maintenance_price is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Client has no maintenance_price configured"
-        )
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     project = db.query(Project).filter(Project.client_id == client.id).order_by(Project.created_at.desc()).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client has no project")
+    if project.maintenance_price is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no maintenance_price configured"
+        )
 
     record = MaintenanceRecord(
         client_id=client.id,
         project_id=project.id,
         cycle_year=payload.cycle_year,
         due_date=payload.due_date,
-        amount=payload.amount if payload.amount is not None else client.maintenance_price,
+        amount=payload.amount if payload.amount is not None else project.maintenance_price,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
+    manager.broadcast_change("maintenance", client_id=record.client_id)
     return record
 
 
@@ -90,9 +94,9 @@ def create_project_maintenance_cycle(
 ):
     project = _get_project_or_404(project_id, db)
     client = project.client
-    if client.maintenance_price is None:
+    if project.maintenance_price is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Client has no maintenance_price configured"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no maintenance_price configured"
         )
 
     record = MaintenanceRecord(
@@ -100,11 +104,12 @@ def create_project_maintenance_cycle(
         project_id=project.id,
         cycle_year=payload.cycle_year,
         due_date=payload.due_date,
-        amount=payload.amount if payload.amount is not None else client.maintenance_price,
+        amount=payload.amount if payload.amount is not None else project.maintenance_price,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
+    manager.broadcast_change("maintenance", client_id=record.client_id)
     return record
 
 
@@ -127,6 +132,7 @@ def approve_proof(record_id: int, db: Session = Depends(get_db)):
     record.rejection_reason = None
     db.commit()
     db.refresh(record)
+    manager.broadcast_change("maintenance", client_id=record.client_id)
     return record
 
 
@@ -149,6 +155,7 @@ def reject_proof(record_id: int, payload: MaintenanceRejectRequest, db: Session 
         notify_maintenance_proof_rejected(
             client.email, record.id, payload.rejection_reason, record.penalty_deadline.isoformat()
         )
+    manager.broadcast_change("maintenance", client_id=record.client_id)
     return record
 
 
@@ -176,6 +183,7 @@ def create_infra_cost(payload: InfrastructureCostEntryCreateRequest, db: Session
     db.add(entry)
     db.commit()
     db.refresh(entry)
+    manager.broadcast_change("maintenance", client_id=entry.client_id)
     return entry
 
 
@@ -190,6 +198,7 @@ def update_infra_cost(entry_id: int, payload: InfrastructureCostEntryUpdateReque
     entry.monthly_overhead_price = payload.monthly_overhead_price
     db.commit()
     db.refresh(entry)
+    manager.broadcast_change("maintenance", client_id=entry.client_id)
     return entry
 
 
@@ -198,8 +207,10 @@ def delete_infra_cost(entry_id: int, db: Session = Depends(get_db)):
     entry = db.get(InfrastructureCostEntry, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    client_id = entry.client_id
     db.delete(entry)
     db.commit()
+    manager.broadcast_change("maintenance", client_id=client_id)
 
 
 @infra_costs_project_scoped_router.get("", response_model=list[InfrastructureCostEntryOut])
@@ -226,4 +237,5 @@ def create_project_infra_cost(
     db.add(entry)
     db.commit()
     db.refresh(entry)
+    manager.broadcast_change("maintenance", client_id=entry.client_id)
     return entry

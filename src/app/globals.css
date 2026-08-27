@@ -14,6 +14,7 @@
   --border-subtle: rgba(42, 46, 51, 0.15);
   --brand-green: #15BB00;
   --on-brand-green: #0A2E08;
+  --forest-green: #1E8A4F;
   --shadow-strong: var(--border-strong);
   --footer-strip: #2A2E33;
 }
@@ -32,6 +33,7 @@ html.dark {
   --border-subtle: rgba(232, 226, 214, 0.3);
   --brand-green: #15BB00;
   --on-brand-green: #0A2E08;
+  --forest-green: #1E8A4F;
   --shadow-strong: rgba(0, 0, 0, 0.55);
 }
 
@@ -49,6 +51,8 @@ html.dark {
   --color-warning: var(--warning);
   --color-brand-green: var(--brand-green);
   --color-on-brand-green: var(--on-brand-green);
+  --color-forest-green: var(--forest-green);
+  --color-accent: var(--accent);
 
   /* Aliases for an older token naming scheme still used on some pages */
   --color-amber: var(--accent);
@@ -178,6 +182,12 @@ html.dark {
 }
 
 @media print {
+  /* `html { zoom: 0.8 }` below is an on-screen density choice -- it has no business shrinking
+     printed/exported output. Without this reset, both window.print() and the headless-Chromium
+     PDF route (which renders under this same print media) render the invoice at 80% scale,
+     leaving a blank margin on the page instead of filling it. */
+  html { zoom: 1; }
+
   /* #invoice-print-root is portaled straight to document.body (see billing/page.tsx), so
      hiding the entire app shell here can't affect it — no leftover invisible-but-laid-out
      height from Sidebar/min-h-screen to pad the print output with a blank trailing page. */

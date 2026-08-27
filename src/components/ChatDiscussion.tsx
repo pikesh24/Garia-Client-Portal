@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui";
 
 interface ChatDiscussionProps {
   messages: FeatureRequestMessage[];
-  currentRole: "client" | "admin";
+  currentRole: "client" | "admin" | "developer";
   body: string;
   setBody: (body: string) => void;
   sendMessage: () => void;
@@ -44,9 +44,6 @@ export function ChatDiscussion({
           <span className="material-symbols-outlined text-brand-green">forum</span>
           Direct Comm Channel
         </h4>
-        <span className="font-data-mono text-[10px] text-brand-green bg-brand-green/10 px-2 py-1 border border-brand-green uppercase font-bold animate-pulse">
-          Live
-        </span>
       </div>
 
       {/* Messages Area */}
@@ -60,7 +57,8 @@ export function ChatDiscussion({
           </div>
         ) : (
           messages.map((m) => {
-            const isMine = m.sender_role === currentRole;
+            // Admin and developer are both "internal team" senders, distinct from the client.
+            const isMine = currentRole === "client" ? m.sender_role === "client" : m.sender_role !== "client";
             return (
               <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                 <div

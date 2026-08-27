@@ -4,7 +4,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
-from app.models.enums import InvoiceStatus
+from app.models.enums import InvoiceLineItemType, InvoiceStatus
 
 
 class Invoice(Base, TimestampMixin):
@@ -39,7 +39,13 @@ class InvoiceLineItem(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), nullable=False, index=True)
     feature_request_id: Mapped[int | None] = mapped_column(ForeignKey("feature_requests.id"), nullable=True)
+    maintenance_record_id: Mapped[int | None] = mapped_column(ForeignKey("maintenance_records.id"), nullable=True)
 
+    item_type: Mapped[InvoiceLineItemType] = mapped_column(
+        Enum(InvoiceLineItemType, name="invoice_line_item_type"),
+        default=InvoiceLineItemType.FEATURE,
+        nullable=False,
+    )
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     frontend_hours: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     backend_hours: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
@@ -48,3 +54,4 @@ class InvoiceLineItem(Base, TimestampMixin):
 
     invoice: Mapped["Invoice"] = relationship(back_populates="line_items")
     feature_request: Mapped["FeatureRequest | None"] = relationship()
+    maintenance_record: Mapped["MaintenanceRecord | None"] = relationship()

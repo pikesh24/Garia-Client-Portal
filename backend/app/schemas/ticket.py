@@ -2,7 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.enums import TicketPriority, TicketStatus
+from app.models.enums import TicketStatus
+from app.schemas.ticket_assignment import TicketAssignmentOut
 
 
 class TicketAttachmentOut(BaseModel):
@@ -33,11 +34,18 @@ class TicketOut(BaseModel):
     name: str
     description: str
     status: TicketStatus
-    priority: TicketPriority
     resolution_text: str | None
     attachments: list[TicketAttachmentOut] = []
     status_history: list[TicketStatusHistoryOut] = []
     created_at: datetime
+
+
+class AdminTicketOut(TicketOut):
+    assignments: list[TicketAssignmentOut] = []
+
+
+class DeveloperTicketOut(TicketOut):
+    queue_position: int
 
 
 class TicketStatusUpdateRequest(BaseModel):

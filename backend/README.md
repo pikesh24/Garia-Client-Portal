@@ -67,8 +67,8 @@ maintenance compliance.
 - Support tickets: attachment required to file; full status history timeline.
 - Feature requests: one-way clarification rule (client can only submit a full description override, not free-form replies); authorization and base-feature activation are irreversible (409 on repeat); completion requires `actual_hours_taken`.
 - Discounts: only one active discount per client — activating a new one deactivates the rest.
-- Invoices: draft generation pulls eligible feature requests (`status != cancelled` and `added_by_client = true`), applies the client's active discount, then finalizing snapshots a signed document and locks the invoice.
-- Maintenance: annual flat fee snapshotted from `client.maintenance_price`; rejected proof opens a 7-day penalty window (`penalty_deadline`). The infrastructure cost registry is informational only and not billed automatically.
+- Invoices: draft generation pulls eligible feature requests (`status != cancelled` and `added_by_client = true`) and/or unbilled maintenance records for the project, applies the client's active discount, then finalizing snapshots a signed document and locks the invoice. Clients only ever see finalized/paid invoices, never drafts.
+- Maintenance: annual flat fee snapshotted from `project.maintenance_price`; rejected proof opens a 7-day penalty window (`penalty_deadline`). A maintenance record can be billed on an invoice at most once. The infrastructure cost registry remains informational only and not billed automatically.
 
 ## Auth model
 

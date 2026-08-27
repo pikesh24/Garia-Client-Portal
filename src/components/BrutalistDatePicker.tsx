@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 
 interface BrutalistDatePickerProps {
   value: string;
@@ -12,6 +11,8 @@ interface BrutalistDatePickerProps {
   placeholder?: string;
 }
 
+const MARGIN = 8;
+
 export function BrutalistDatePicker({
   value,
   onChange,
@@ -21,37 +22,17 @@ export function BrutalistDatePicker({
   placeholder = "YYYY-MM-DD",
 }: BrutalistDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // Computed against the trigger's and popup's *actual* rendered rects on open, so the
+  // calendar always lands fully inside the viewport — no guessed dimensions, no overflow.
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({ visibility: "hidden" });
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
 
   // Initialize view date to the selected value or today
   const initialDate = value ? new Date(value + 'T00:00:00') : new Date();
   const [viewDate, setViewDate] = useState(initialDate);
 
-  // The popup is portaled to document.body (see below) so it can't be clipped by an
-  // ancestor's overflow-hidden (e.g. the shared Card component) — so its position has
-  // to be computed from the trigger's viewport rect instead of relying on CSS `absolute`.
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function updatePosition() {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setPopupPos({ top: rect.bottom + 8, left: rect.left });
-    }
-
-    updatePosition();
-    window.addEventListener("scroll", updatePosition, true);
-    window.addEventListener("resize", updatePosition);
-    return () => {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [isOpen]);
-
-  // Close when clicking outside (either the trigger or the portaled popup)
+  // Close when clicking outside (either the trigger or the popup)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node;
@@ -62,6 +43,47 @@ export function BrutalistDatePicker({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Runs synchronously after the (still-hidden) popup mounts but before paint, so we can
+  // measure its real size and reposition it with zero visible flicker.
+  useLayoutEffect(() => {
+    if (!isOpen || !containerRef.current || !popupRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const popupRect = popupRef.current.getBoundingClientRect();
+    const popupW = popupRect.width;
+    const popupH = popupRect.height;
+
+    // Prefer opening to the right of the field, top-aligned with it.
+    let left = containerRect.right + MARGIN;
+    let top = containerRect.top;
+
+    if (left + popupW > window.innerWidth - MARGIN) {
+      // No room on the right — try the left side of the field instead.
+      const leftSide = containerRect.left - MARGIN - popupW;
+      if (leftSide >= MARGIN) {
+        left = leftSide;
+      } else {
+        // No room on either side — fall back to a normal dropdown below the field.
+        left = containerRect.left;
+        top = containerRect.bottom + MARGIN;
+      }
+    }
+
+    // Clamp vertically so it's always fully on-screen, regardless of which branch above ran.
+    top = Math.min(top, window.innerHeight - MARGIN - popupH);
+    top = Math.max(top, MARGIN);
+    left = Math.min(left, window.innerWidth - MARGIN - popupW);
+    left = Math.max(left, MARGIN);
+
+    // This app renders at `zoom: 0.8` (see globals.css). getBoundingClientRect() already
+    // reads back real, post-zoom viewport coordinates, but inline pixel styles we write get
+    // scaled by that same zoom on render — so left/top need to be un-scaled here, or the
+    // popup lands at 0.8x its intended position (confirmed via direct measurement).
+    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom || "1") || 1;
+
+    setPopupStyle({ position: "fixed", top: top / zoom, left: left / zoom, visibility: "visible" });
+  }, [isOpen]);
 
   const handleDayClick = (day: number) => {
     const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
@@ -99,26 +121,26 @@ export function BrutalistDatePicker({
   ];
 
   return (
-    <div className={`relative ${className}`} ref={containerRef}>
+    <div className={`relative w-full ${className}`} ref={containerRef}>
       <div
-        ref={triggerRef}
-        className="relative group cursor-pointer"
+        className={`flex items-center justify-between w-full h-[48px] border-2 border-border-strong bg-bg-panel-alt px-4 font-data-mono text-data-mono text-text-main transition-all cursor-pointer outline-none ${
+          isOpen
+            ? "border-text-main shadow-[4px_4px_0px_0px_var(--border-strong)]"
+            : "hover:border-text-main"
+        }`}
         onClick={() => setIsOpen(!isOpen)}
       >
-        <div className="absolute inset-0 bg-border-strong translate-x-[6px] translate-y-[6px] transition-transform group-hover:translate-x-[4px] group-hover:translate-y-[4px]"></div>
-        <div className={`relative flex items-center justify-between w-full p-card-padding border-4 border-border-strong font-data-mono text-text-main bg-bg-base outline-none focus:ring-4 focus:ring-brand-green/30 focus:border-brand-green transition-colors`}>
-          <span>{value ? value : <span className="text-text-muted">{placeholder}</span>}</span>
-          <span className="material-symbols-outlined text-text-muted">calendar_today</span>
-        </div>
+        <span>{value ? value : <span className="text-text-muted">{placeholder}</span>}</span>
+        <span className="material-symbols-outlined text-text-muted select-none">calendar_today</span>
       </div>
       {/* Hidden input for form submission if required */}
       <input type="text" id={id} required={required} value={value} readOnly className="sr-only" />
 
-      {isOpen && typeof document !== "undefined" && createPortal(
+      {isOpen && (
         <div
           ref={popupRef}
-          className="fixed z-50 p-4 w-72 bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)]"
-          style={{ top: popupPos.top, left: popupPos.left }}
+          style={popupStyle}
+          className="z-50 p-4 w-72 bg-bg-base border-4 border-border-strong shadow-[8px_8px_0px_0px_var(--border-strong)]"
         >
           <div className="flex justify-between items-center mb-4">
             <button
@@ -128,7 +150,7 @@ export function BrutalistDatePicker({
             >
               <span className="material-symbols-outlined">chevron_left</span>
             </button>
-            <span className="font-headline-lg font-black uppercase tracking-widest text-sm">
+            <span className="font-headline-lg font-black uppercase tracking-widest text-sm select-none">
               {monthNames[viewDate.getMonth()]} {viewDate.getFullYear()}
             </span>
             <button
@@ -140,7 +162,7 @@ export function BrutalistDatePicker({
             </button>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center mb-2">
+          <div className="grid grid-cols-7 gap-1 text-center mb-2 select-none">
             {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
               <div key={day} className="font-data-mono text-[10px] text-text-muted uppercase font-bold">
                 {day}
@@ -176,8 +198,7 @@ export function BrutalistDatePicker({
               );
             })}
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );
