@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin_or_developer
 from app.db.session import get_db
-from app.models.enums import FeatureRequestStatus
+from app.models.enums import ChallengeStatus, FeatureRequestStatus
 from app.models.feature_request import FeatureRequest
 from app.models.project import Project
 from app.schemas.feature_request import (
@@ -90,6 +90,7 @@ def update_base_feature_details(
     updates = payload.model_dump(exclude_unset=True)
     scope_fields = {"quoted_frontend_hours", "quoted_backend_hours", "quoted_production_hours"}
     scope_changed = any(field in updates and updates[field] != getattr(fr, field) for field in scope_fields)
+    details_changed = any(value != getattr(fr, field) for field, value in updates.items())
 
     for field, value in updates.items():
         setattr(fr, field, value)
@@ -105,6 +106,12 @@ def update_base_feature_details(
     if scope_changed and fr.is_base_feature:
         fr.base_feature_activated = False
         fr.status = FeatureRequestStatus.UNDER_REVIEW
+
+    # A decided challenge only covers the terms it was raised against. Once the admin revises
+    # the feature, the client may have new concerns, so let them challenge it again. The old
+    # challenge thread is kept and simply continues when a new challenge is opened.
+    if details_changed and fr.challenge_status in (ChallengeStatus.APPROVED, ChallengeStatus.DENIED):
+        fr.challenge_status = ChallengeStatus.NONE
 
     db.commit()
     db.refresh(fr)

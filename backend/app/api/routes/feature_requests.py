@@ -181,7 +181,9 @@ def open_challenge(
     if fr.challenge_status == ChallengeStatus.OPEN:
         raise BusinessRuleViolation("A challenge is already open for this feature")
     if fr.challenge_status in (ChallengeStatus.APPROVED, ChallengeStatus.DENIED):
-        raise IrreversibleActionConflict("This feature's challenge has already been decided and cannot be reopened")
+        raise IrreversibleActionConflict(
+            "This feature's challenge has already been decided; you can challenge again once the admin revises it"
+        )
 
     fr.challenge_status = ChallengeStatus.OPEN
     db.commit()

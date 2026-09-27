@@ -22,7 +22,8 @@ export default function ProjectFeaturesPage() {
   const [features, setFeatures] = useState<ProjectFeatures | null>(null);
   const [services, setServices] = useState<InfrastructureCostEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [challenging, setChallenging] = useState<FeatureRequest | null>(null);
+  // Track only the id so the modal always reflects the latest loaded feature (e.g. its challenge status).
+  const [challengingId, setChallengingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const featureRequestsVersion = useWsEvent("feature_requests");
   const maintenanceVersion = useWsEvent("maintenance");
@@ -41,12 +42,6 @@ export default function ProjectFeaturesPage() {
     setFeatures(featureData);
     setServices(serviceData);
     setLoading(false);
-    if (challenging) {
-      const updated = [...featureData.base_features, ...featureData.extra_features].find(
-        (f) => f.id === challenging.id
-      );
-      setChallenging(updated ?? null);
-    }
   }
 
   useEffect(() => {
@@ -61,7 +56,7 @@ export default function ProjectFeaturesPage() {
     );
     if (match && match.challenge_status !== "none") {
       autoOpenedFeatureId.current = focusFeatureId;
-      setChallenging(match);
+      setChallengingId(match.id);
     }
   }, [focusFeatureId, features]);
 
@@ -97,7 +92,7 @@ export default function ProjectFeaturesPage() {
     try {
       await apiRequest(`/api/projects/${currentProject.id}/feature-requests/${fr.id}/challenge`, { method: "POST" });
       await load();
-      setChallenging(fr);
+      setChallengingId(fr.id);
     } catch (err) {
       setError(err instanceof ApiError ? String(err.detail) : "Could not open challenge");
     }
@@ -227,7 +222,7 @@ export default function ProjectFeaturesPage() {
               {fr.is_base_feature && (
                 <Button
                   variant="secondary"
-                  onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
+                  onClick={() => (challengeOpen || challengeDecided ? setChallengingId(fr.id) : openChallenge(fr))}
                 >
                   {challengeDecided ? "View Challenge" : "Challenge"}
                 </Button>
@@ -243,7 +238,7 @@ export default function ProjectFeaturesPage() {
           <div className="mt-8 pt-6 flex flex-wrap items-center gap-4">
             <Button
               variant="secondary"
-              onClick={() => (challengeOpen || challengeDecided ? setChallenging(fr) : openChallenge(fr))}
+              onClick={() => (challengeOpen || challengeDecided ? setChallengingId(fr.id) : openChallenge(fr))}
             >
               {challengeOpen || challengeDecided ? "View Challenge" : "Challenge"}
             </Button>
@@ -263,6 +258,11 @@ export default function ProjectFeaturesPage() {
   }
 
   if (loading || !features) return <p className="text-text-muted">Loading...</p>;
+
+  const challenging =
+    challengingId == null
+      ? null
+      : [...features.base_features, ...features.extra_features].find((f) => f.id === challengingId) ?? null;
 
   return (
     <div className="space-y-12">
@@ -299,7 +299,7 @@ export default function ProjectFeaturesPage() {
         <ChallengeModal
           projectId={currentProject.id}
           featureRequest={challenging}
-          onClose={() => setChallenging(null)}
+          onClose={() => setChallengingId(null)}
           onChanged={load}
         />
       )}
@@ -322,6 +322,7 @@ function ChallengeModal({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const featureRequestsVersion = useWsEvent("feature_requests");
 
   async function loadMessages() {
     try {
@@ -337,7 +338,7 @@ function ChallengeModal({
   useEffect(() => {
     loadMessages();
     markFeatureRequestRead(featureRequest.id);
-  }, [featureRequest.id]);
+  }, [featureRequest.id, featureRequestsVersion]);
 
   async function sendMessage() {
     if (!body.trim()) return;

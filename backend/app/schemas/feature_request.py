@@ -45,7 +45,7 @@ class BaseFeatureActivationRequest(BaseModel):
 
 
 class CompleteFeatureRequest(BaseModel):
-    actual_hours_taken: float
+    actual_hours_taken: int
 
 
 class ChallengeDecisionRequest(BaseModel):
@@ -87,9 +87,10 @@ class AdminBaseFeatureCreateRequest(BaseModel):
     name: str
     description: str
     is_base_feature: bool = True
-    quoted_frontend_hours: float | None = None
-    quoted_backend_hours: float | None = None
-    quoted_production_hours: float | None = None
+    # Hours are always quoted in whole numbers.
+    quoted_frontend_hours: int | None = None
+    quoted_backend_hours: int | None = None
+    quoted_production_hours: int | None = None
     agreement_date: date | None = None
 
 
@@ -97,7 +98,8 @@ class AdminFeatureDetailsUpdateRequest(BaseModel):
     feature_id: str | None = None
     name: str | None = None
     description: str | None = None
-    quoted_frontend_hours: float | None = None
-    quoted_backend_hours: float | None = None
-    quoted_production_hours: float | None = None
+    # Hours are always quoted in whole numbers.
+    quoted_frontend_hours: int | None = None
+    quoted_backend_hours: int | None = None
+    quoted_production_hours: int | None = None
     agreement_date: date | None = None

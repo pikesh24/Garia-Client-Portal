@@ -30,7 +30,32 @@ from app.api.routes import (
 )
 from app.core.config import settings
 
-app = FastAPI(title=settings.PROJECT_NAME)
+IS_PRODUCTION = settings.ENVIRONMENT == "production"
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    # The interactive docs publish a full map of every route and schema.
+    # Keep them for local work, hide them in production.
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    if IS_PRODUCTION:
+        # Tells the browser to refuse plain HTTP for this host from now on,
+        # so a network attacker cannot strip TLS on a later visit.
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

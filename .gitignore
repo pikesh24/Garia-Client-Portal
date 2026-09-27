@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# production secrets
+.env.prod
+docker-compose-prod.yml
+
+# server-side seed/startup scripts (contain default credentials, mounted by docker-compose-prod.yml)
+backend/seed.sh
+backend/seed_users.py
+backend/startup.sh

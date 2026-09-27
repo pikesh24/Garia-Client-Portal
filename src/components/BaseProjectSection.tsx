@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiRequest, ApiError } from "@/lib/api";
+import { apiRequest, ApiError, formatApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage, InfrastructureCostEntry, Project, User } from "@/lib/types";
 import {
   Alert,
@@ -44,6 +44,14 @@ const emptyDraft = {
 const emptyServiceDraft = { name: "", description: "", recurring_cost: "" };
 type ServiceDraft = typeof emptyServiceDraft;
 
+const WHOLE_HOURS_ERROR = "Hours must be whole numbers.";
+
+function hasFractionalHours(d: typeof emptyDraft): boolean {
+  return [d.quoted_frontend_hours, d.quoted_backend_hours, d.quoted_production_hours].some(
+    (h) => h !== "" && !Number.isInteger(Number(h))
+  );
+}
+
 function computeLivePrice(project: Project, d: typeof emptyDraft): number {
   return (
     Number(d.quoted_frontend_hours || 0) * (project.hourly_rate_frontend ?? 0) +
@@ -71,7 +79,8 @@ export function BaseProjectSection({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<typeof emptyDraft | null>(null);
   const [newServiceByFeature, setNewServiceByFeature] = useState<Record<number, ServiceDraft>>({});
-  const [reviewingChallenge, setReviewingChallenge] = useState<FeatureRequest | null>(null);
+  // Track only the id so the modal always reflects the latest loaded feature (e.g. its challenge status).
+  const [reviewingChallengeId, setReviewingChallengeId] = useState<number | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
   const [editServiceDraft, setEditServiceDraft] = useState<ServiceDraft | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -101,7 +110,7 @@ export function BaseProjectSection({
     const match = features.find((f) => f.id === Number(focusFeatureId));
     if (match && match.challenge_status !== "none") {
       autoOpenedFeatureId.current = focusFeatureId;
-      setReviewingChallenge(match);
+      setReviewingChallengeId(match.id);
     }
   }, [focusFeatureId, features]);
 
@@ -135,6 +144,10 @@ export function BaseProjectSection({
   async function createFeature(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (hasFractionalHours(draft)) {
+      setError(WHOLE_HOURS_ERROR);
+      return;
+    }
     try {
       const fr = await apiRequest<FeatureRequest>(`/api/admin/projects/${projectId}/base-project`, {
         method: "POST",
@@ -148,7 +161,7 @@ export function BaseProjectSection({
       setShowAddForm(false);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not create feature");
+      setError(formatApiError(err, "Could not create feature"));
     }
   }
 
@@ -221,6 +234,10 @@ export function BaseProjectSection({
   async function saveEdit(id: number) {
     if (!editDraft) return;
     setError(null);
+    if (hasFractionalHours(editDraft)) {
+      setError(WHOLE_HOURS_ERROR);
+      return;
+    }
     try {
       await apiRequest(`/api/admin/projects/${projectId}/base-project/${id}`, {
         method: "PATCH",
@@ -230,7 +247,7 @@ export function BaseProjectSection({
       setEditDraft(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not update feature");
+      setError(formatApiError(err, "Could not update feature"));
     }
   }
 
@@ -285,6 +302,9 @@ export function BaseProjectSection({
   }
 
   if (!features) return <p className="text-text-muted">Loading base project...</p>;
+
+  const reviewingChallenge =
+    reviewingChallengeId == null ? null : features.find((f) => f.id === reviewingChallengeId) ?? null;
 
   return (
     <Card>
@@ -354,6 +374,8 @@ export function BaseProjectSection({
                   <Label>Frontend Hours</Label>
                   <Input
                     type="number"
+                    min="0"
+                    step="1"
                     value={draft.quoted_frontend_hours}
                     onChange={(e) => setDraft({ ...draft, quoted_frontend_hours: e.target.value })}
                     placeholder="0"
@@ -365,6 +387,8 @@ export function BaseProjectSection({
                   <Label>Backend Hours</Label>
                   <Input
                     type="number"
+                    min="0"
+                    step="1"
                     value={draft.quoted_backend_hours}
                     onChange={(e) => setDraft({ ...draft, quoted_backend_hours: e.target.value })}
                     placeholder="0"
@@ -376,6 +400,8 @@ export function BaseProjectSection({
                   <Label>Production Hours</Label>
                   <Input
                     type="number"
+                    min="0"
+                    step="1"
                     value={draft.quoted_production_hours}
                     onChange={(e) => setDraft({ ...draft, quoted_production_hours: e.target.value })}
                     placeholder="0"
@@ -523,7 +549,7 @@ export function BaseProjectSection({
       {reviewingChallenge && (
         <ChallengeReviewModal
           featureRequest={reviewingChallenge}
-          onClose={() => setReviewingChallenge(null)}
+          onClose={() => setReviewingChallengeId(null)}
           onChanged={load}
         />
       )}
@@ -615,6 +641,8 @@ export function BaseProjectSection({
                 <Label>Frontend Hours</Label>
                 <Input
                   type="number"
+                  min="0"
+                  step="1"
                   value={editDraft.quoted_frontend_hours}
                   onChange={(e) => setEditDraft({ ...editDraft, quoted_frontend_hours: e.target.value })}
                 />
@@ -623,6 +651,8 @@ export function BaseProjectSection({
                 <Label>Backend Hours</Label>
                 <Input
                   type="number"
+                  min="0"
+                  step="1"
                   value={editDraft.quoted_backend_hours}
                   onChange={(e) => setEditDraft({ ...editDraft, quoted_backend_hours: e.target.value })}
                 />
@@ -631,6 +661,8 @@ export function BaseProjectSection({
                 <Label>Production Hours</Label>
                 <Input
                   type="number"
+                  min="0"
+                  step="1"
                   value={editDraft.quoted_production_hours}
                   onChange={(e) => setEditDraft({ ...editDraft, quoted_production_hours: e.target.value })}
                 />
@@ -841,7 +873,7 @@ export function BaseProjectSection({
               </div>
               <div className="shrink-0 flex gap-3">
                 {fr.is_base_feature && fr.challenge_status !== "none" && (
-                  <Button variant="secondary" onClick={() => setReviewingChallenge(fr)}>
+                  <Button variant="secondary" onClick={() => setReviewingChallengeId(fr.id)}>
                     {fr.challenge_status === "open" ? "Review Challenge" : "View Challenge"}
                   </Button>
                 )}
@@ -925,6 +957,7 @@ function ChallengeReviewModal({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const featureRequestsVersion = useWsEvent("feature_requests");
 
   async function loadMessages() {
     try {
@@ -940,7 +973,7 @@ function ChallengeReviewModal({
   useEffect(() => {
     loadMessages();
     markFeatureRequestRead(featureRequest.id);
-  }, [featureRequest.id]);
+  }, [featureRequest.id, featureRequestsVersion]);
 
   async function sendMessage() {
     if (!body.trim()) return;

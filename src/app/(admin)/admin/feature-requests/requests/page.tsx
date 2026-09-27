@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { apiRequest, ApiError } from "@/lib/api";
+import { apiRequest, ApiError, formatApiError } from "@/lib/api";
 import { FeatureRequest, FeatureRequestMessage } from "@/lib/types";
 import { Alert, Button, Field, Input, Label, Modal, PageHeader, StatusBadge, Textarea } from "@/components/ui";
 import { ChatDiscussion } from "@/components/ChatDiscussion";
@@ -172,8 +172,12 @@ function AdminFeatureRequestDetail({
   }, [featureRequest]);
 
   async function saveHours() {
-    setSavingHours(true);
     setError(null);
+    if ([frontendHours, backendHours, productionHours].some((h) => h !== "" && !Number.isInteger(Number(h)))) {
+      setError("Hours must be whole numbers.");
+      return;
+    }
+    setSavingHours(true);
     try {
       await apiRequest(`/api/admin/projects/${projectId}/base-project/${featureRequest.id}`, {
         method: "PATCH",
@@ -185,7 +189,7 @@ function AdminFeatureRequestDetail({
       });
       await onChanged();
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Could not save hours");
+      setError(formatApiError(err, "Could not save hours"));
     } finally {
       setSavingHours(false);
     }
@@ -251,6 +255,7 @@ function AdminFeatureRequestDetail({
                 <Input
                   type="number"
                   min="0"
+                  step="1"
                   value={frontendHours}
                   onChange={(e) => setFrontendHours(e.target.value)}
                 />
@@ -260,6 +265,7 @@ function AdminFeatureRequestDetail({
                 <Input
                   type="number"
                   min="0"
+                  step="1"
                   value={backendHours}
                   onChange={(e) => setBackendHours(e.target.value)}
                 />
@@ -269,6 +275,7 @@ function AdminFeatureRequestDetail({
                 <Input
                   type="number"
                   min="0"
+                  step="1"
                   value={productionHours}
                   onChange={(e) => setProductionHours(e.target.value)}
                 />
